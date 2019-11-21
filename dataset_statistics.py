@@ -1,5 +1,5 @@
-from utils.dataset import *
-from utils.args import process_args
+from dataset import *
+from args import process_args
 import pdb
 import networkx as nx
 import matplotlib.pyplot as plt

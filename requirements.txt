@@ -1,0 +1,4 @@
+torch==1.3.0
+dgl
+dgl-cu100
+pytorch_lightning
