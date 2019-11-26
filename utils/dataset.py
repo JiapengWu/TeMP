@@ -3,8 +3,8 @@ import os
 from collections import defaultdict
 import pickle
 import dgl
+from torch.utils.data import Dataset
 import torch
-
 
 def load_quadruples(dataset_path, fileName, fileName2=None, fileName3=None):
     with open(os.path.join(dataset_path, fileName), 'r') as fr:
@@ -90,29 +90,43 @@ def get_big_graph(data, num_rels):
 
 
 def build_time_stamp_graph(args):
+    train_graph_dict_path = os.path.join(args.dataset, 'train_graphs.txt')
+    dev_graph_dict_path = os.path.join(args.dataset, 'dev_graphs.txt')
+    test_graph_dict_path = os.path.join(args.dataset, 'test_graphs.txt')
 
-    graph_dict_path = os.path.join(args.dataset, 'train_graphs.txt')
-
-    if not os.path.isfile(graph_dict_path):
+    graph_dict_train = {}
+    graph_dict_dev = {}
+    graph_dict_test = {}
+    if not os.path.isfile(train_graph_dict_path) or not os.path.isfile(dev_graph_dict_path) or not os.path.isfile(test_graph_dict_path):
         train_data, train_times = load_quadruples(args.dataset, 'train.txt')
-        # test_data, test_times = load_quadruples('', 'test.txt')
-        # dev_data, dev_times = load_quadruples('', 'valid.txt')
+        test_data, test_times = load_quadruples(args.dataset, 'test.txt')
+        if args.dataset == 'ICEWS14':
+            dev_data, dev_times = load_quadruples(args.dataset, 'test.txt')
+        else:
+            dev_data, dev_times = load_quadruples(args.dataset, 'valid.txt')
         num_e, num_r = get_total_number(args.dataset, 'stat.txt')
 
-        graph_dict_train = {}
 
-        for tim in train_times:
-            print(str(tim) + '\t' + str(max(train_times)))
-            data = get_data_with_t(train_data, tim)
-            graph_dict_train[tim] = get_big_graph(data, num_r)
+        for times, datas, path, graph_dict in zip([
+            train_times, dev_times, test_times],
+                [train_data, dev_data, test_data],
+                [train_graph_dict_path, dev_graph_dict_path, test_graph_dict_path],
+                [graph_dict_train, graph_dict_dev, graph_dict_test]
+        ):
+            for tim in times:
+                print(str(tim) + '\t' + str(max(times)))
+                data = get_data_with_t(datas, tim)
+                graph_dict[tim] = get_big_graph(data, num_r)
+                with open(path, 'wb') as fp:
+                    pickle.dump(graph_dict, fp)
 
-            with open(graph_dict_path, 'wb') as fp:
-                pickle.dump(graph_dict_train, fp)
     else:
-        with open(graph_dict_path, 'rb') as f:
-            graph_dict_train = pickle.load(f)
-
-    return graph_dict_train
+        graph_dicts = []
+        for path in train_graph_dict_path, dev_graph_dict_path, test_graph_dict_path:
+            with open(path, 'rb') as f:
+                graph_dicts.append(pickle.load(f))
+        graph_dict_train, graph_dict_dev, graph_dict_test = graph_dicts
+    return graph_dict_train, graph_dict_dev, graph_dict_test
 
 
 def id2entrel(dataset_path, num_rels):
@@ -131,3 +145,14 @@ def id2entrel(dataset_path, num_rels):
             id2rel[id] = name
             id2rel[id + num_rels] = "{}_inv".format(name)
     return id2ent, id2rel
+
+
+class TimeDataset(Dataset):
+    def __init__(self, times):
+        self.times = times
+
+    def __getitem__(self, index):
+        return self.times[index]
+
+    def __len__(self):
+        return len(self.times)

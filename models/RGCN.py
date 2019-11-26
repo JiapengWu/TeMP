@@ -39,7 +39,7 @@ class RGCNLayer(nn.Module):
             loop_message = torch.mm(g.ndata['h'], self.loop_weight)
             if self.dropout is not None:
                 loop_message = self.dropout(loop_message)
-
+        # import pdb; pdb.set_trace()
         self.propagate(g, reverse)
 
         # apply bias and activation

@@ -2,57 +2,77 @@
 from utils.dataset import *
 from utils.args import process_args
 import pdb
-from models.TKG_VRE import VKG_VRE
-from sklearn.utils import shuffle
-from utils.utils import make_batch
-
-
-def train_epoch():
-    model.train()
-    train_times_shuffled = shuffle(train_times)
-    epoch_loss = []
-    for batch_time in make_batch(train_times_shuffled, args.batch_size):
-        batch_time = torch.from_numpy(batch_time)
-
-        # model(batch_time, train_graph_dict)
-        loss = model(batch_time, train_graph_dict)
-
-        optimizer.zero_grad()
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_norm)  # clip gradients
-        optimizer.step()
-        epoch_loss.append(loss.item())
-        print("Batch loss: {}\r".format(loss.item()), end='\r')
-
+from models.TKG_VRE import TKG_VAE_Module
+import time
+from pytorch_lightning import Trainer
+from pytorch_lightning.callbacks import EarlyStopping
+# from pytorch_lightning.logging import TestTubeLogger
+import pandas as pd
+from utils.utils import MyTestTubeLogger
+import json
 
 if __name__ == '__main__':
     args = process_args()
     torch.manual_seed(args.seed)
-    use_cuda = args.use_cuda = args.gpu >= 0 and torch.cuda.is_available()
+    use_cuda = args.use_cuda = args.n_gpu >= 0 and torch.cuda.is_available()
 
-    if use_cuda:
-        print("Using GPU")
-        torch.cuda.set_device(args.gpu)
-    else:
-        print("Using CPU")
+    if args.config:
+        args_json = json.load(open(args.config))
+        args.__dict__.update(dict(args_json))
 
     num_ents, num_rels = get_total_number(args.dataset, 'stat.txt')
     if args.dataset == 'ICEWS14':
         train_data, train_times = load_quadruples(args.dataset, 'train.txt')
         valid_data, valid_times = load_quadruples(args.dataset, 'test.txt')
         test_data, test_times = load_quadruples(args.dataset, 'test.txt')
-        total_data, total_times = load_quadruples(args.dataset, 'train.txt', 'test.txt')
+        total_data, total_times = load_quadruples(args.dataset, 'tain.txt', 'test.txt')
     else:
         train_data, train_times = load_quadruples(args.dataset, 'train.txt')
         valid_data, valid_times = load_quadruples(args.dataset, 'valid.txt')
         test_data, test_times = load_quadruples(args.dataset, 'test.txt')
         total_data, total_times = load_quadruples(args.dataset, 'train.txt', 'valid.txt','test.txt')
 
-    model = VKG_VRE(args, num_ents, num_rels)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=0.0001)
-    train_graph_dict = build_time_stamp_graph(args)
+    print(train_times)
+    print(valid_times)
+    print(test_times)
+    graph_dict_train, graph_dict_dev, graph_dict_test = build_time_stamp_graph(args)
 
-    if use_cuda:
-        model.cuda()
-    for i in range(args.epochs):
-        train_epoch()
+    model = TKG_VAE_Module(args, num_ents, num_rels, graph_dict_train, graph_dict_dev, graph_dict_test, train_times, valid_times, test_times)
+
+    early_stop_callback = EarlyStopping(
+        monitor='avg_val_loss',
+        min_delta=0.00,
+        patience=args.patience,
+        verbose=False,
+        mode='min'
+    )
+
+    tt_logger = MyTestTubeLogger(
+        save_dir="experiments",
+        name="VKGRNN-{}-{}".format(args.dataset.split('/')[-1], args.score_function),
+        debug=False,
+        version=time.strftime('%Y%m%d%H%M'),
+        create_git_tag=True
+    )
+
+    tt_logger.log_hyperparams(args)
+    tt_logger.save()
+    # most basic trainer, uses good defaults
+    trainer = Trainer(logger=tt_logger, gpus=args.n_gpu,
+                      gradient_clip_val=args.gradient_clip_val,
+                      use_amp=args.use_amp,
+                      amp_level=args.amp_level,
+                      max_nb_epochs=args.max_nb_epochs,
+                      # fast_dev_run=args.debug,
+                      # log_gpu_memory='min_max' if args.debug else None,
+                      distributed_backend=args.distributed_backend,
+                      nb_sanity_val_steps=1,
+                      early_stop_callback=early_stop_callback,
+                      train_percent_check=0.1 if args.debug else 0
+                      # print_nan_grads=args.debug
+                      # truncated_bptt_steps=4
+                      )
+    trainer.fit(model)
+    # trainer.test(model)
+
+
