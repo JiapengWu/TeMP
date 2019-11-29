@@ -7,11 +7,10 @@ def get_args():
     parser.add_argument("--dataset-dir", type=str, default='data')
     parser.add_argument("-d", "--dataset", type=str, default='ICEWS18')
     parser.add_argument("--score-function", type=str, default='distmult')
-    # parser.add_argument("--n-gpu", type=int, default=2)
+    parser.add_argument("--n-gpu", type=int, default=2)
     parser.add_argument("--distributed_backend", type=str, default='ddp')
     parser.add_argument("--hidden_size", type=int, default=128)
     parser.add_argument("--embed_size", type=int, default=128)
-    parser.add_argument("--num-k", type=int, default=1000)
     parser.add_argument("--max-nb-epochs", type=int, default=100)
 
     # LSTM parameters
@@ -26,7 +25,7 @@ def get_args():
                        help="number of weight blocks for each relation")
     parser.add_argument("--rgcn-layers", type=int, default=2,
                         help="number of propagation rounds")
-    parser.add_argument("--train-seq-len", type=int, default=3)
+    parser.add_argument("--train-seq-len", type=int, default=5)
     parser.add_argument("--test-seq-len", type=int, default=5)
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--seed", type=int, default=123)

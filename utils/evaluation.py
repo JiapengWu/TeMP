@@ -2,7 +2,8 @@ import torch
 import torch.nn.functional as F
 
 
-def calc_metrics(ent_mean, rel_enc_means, test_triplets, calc_score, eval_bz=100):
+def calc_metrics(ent_mean, rel_enc_means, test_triplets, eval_bz=100):
+
     with torch.no_grad():
         s = test_triplets[:, 0]
         r = test_triplets[:, 1]
@@ -13,23 +14,16 @@ def calc_metrics(ent_mean, rel_enc_means, test_triplets, calc_score, eval_bz=100
         ranks_s = perturb_and_get_rank(ent_mean, rel_enc_means, o, r, s, test_size, eval_bz)
         # perturb object
         ranks_o = perturb_and_get_rank(ent_mean, rel_enc_means, s, r, o, test_size, eval_bz)
-
         ranks = torch.cat([ranks_s, ranks_o])
         ranks += 1 # change to 1-indexed
-        # labels = torch.ones(test_size).float()
-        labels = test_triplets.new_ones(test_size).float()
-        score = calc_score(ent_mean[s], rel_enc_means[r], ent_mean[o])
-        # import pdb; pdb.set_trace()
-        predict_loss = F.binary_cross_entropy_with_logits(score, labels)
 
         mrr = torch.mean(1.0 / ranks.float()).item()
         # print("MRR (raw): {:.6f}".format(mrr.item()))
         hit_1 = torch.mean((ranks <= 1).float()).item()
         hit_3 = torch.mean((ranks <= 3).float()).item()
         hit_10 = torch.mean((ranks <= 10).float()).item()
-        # pos_facts = torch.cat([ent_mean[s], rel_enc_means[r], ent_mean[o]], dim=1)
 
-    return mrr, hit_1, hit_3, hit_10, predict_loss
+    return mrr, hit_1, hit_3, hit_10
 
 
 def perturb_and_get_rank(ent_mean, rel_enc_means, a, r, b, test_size, batch_size=100):
@@ -57,6 +51,7 @@ def perturb_and_get_rank(ent_mean, rel_enc_means, a, r, b, test_size, batch_size
 
 def sort_and_rank(score, target):
     _, indices = torch.sort(score, dim=1, descending=True)
+    # import pdb; pdb.set_trace()
     indices = torch.nonzero(indices == target.view(-1, 1))
     indices = indices[:, 1].view(-1)
     return indices

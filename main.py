@@ -10,6 +10,9 @@ from pytorch_lightning.callbacks import EarlyStopping
 import pandas as pd
 from utils.utils import MyTestTubeLogger
 import json
+from pytorch_lightning.callbacks import ModelCheckpoint
+
+
 
 if __name__ == '__main__':
     args = process_args()
@@ -22,7 +25,7 @@ if __name__ == '__main__':
     use_cuda = args.use_cuda = args.n_gpu >= 0 and torch.cuda.is_available()
     # args.n_gpu = torch.cuda.device_count()
     num_ents, num_rels = get_total_number(args.dataset, 'stat.txt')
-    if args.dataset == 'ICEWS14':
+    if args.dataset == 'data/ICEWS14':
         train_data, train_times = load_quadruples(args.dataset, 'train.txt')
         valid_data, valid_times = load_quadruples(args.dataset, 'test.txt')
         test_data, test_times = load_quadruples(args.dataset, 'test.txt')
@@ -52,6 +55,17 @@ if __name__ == '__main__':
         version=time.strftime('%Y%m%d%H%M'),
         create_git_tag=True
     )
+    checkpoint_path = os.path.join(tt_logger.experiment.get_data_path(tt_logger.experiment.name, tt_logger.experiment.version),"checkpoints")
+    # if not os.path.isdir(checkpoint_path):
+    #     os.makedirs(checkpoint_path)
+    checkpoint_callback = ModelCheckpoint(
+        filepath=checkpoint_path,
+        save_best_only=True,
+        verbose=True,
+        monitor='avg_val_loss',
+        mode='min',
+        prefix=''
+    )
 
     tt_logger.log_hyperparams(args)
     tt_logger.save()
@@ -64,9 +78,10 @@ if __name__ == '__main__':
                       # fast_dev_run=args.debug,
                       # log_gpu_memory='min_max' if args.debug else None,
                       distributed_backend=args.distributed_backend,
-                      nb_sanity_val_steps=3,
+                      nb_sanity_val_steps=1 if args.debug else 5,
                       early_stop_callback=early_stop_callback,
                       train_percent_check=0.1 if args.debug else 1.0,
+                      checkpoint_callback=checkpoint_callback
                       # print_nan_grads=True
                       # truncated_bptt_steps=4
                       )

@@ -44,8 +44,8 @@ class TKG_VAE_Module(LightningModule):
 
         tqdm_dict = {'train_loss': loss}
         output = OrderedDict({
-            'val_reconstruction_loss': reconstruct_loss,
-            'val_KLD_loss': kld_loss if self.use_VAE else torch.tensor(kld_loss),
+            'train_reconstruction_loss': reconstruct_loss,
+            'train_KLD_loss': kld_loss if self.use_VAE else torch.tensor(kld_loss),
             'loss': loss,
             'progress_bar': tqdm_dict,
             'log': tqdm_dict
@@ -61,7 +61,7 @@ class TKG_VAE_Module(LightningModule):
         :param batch:
         :return:
         """
-        mrrs, hit_1s, hit_3s, hit_10s, loss = self.evaluate(batch_time)
+        mrrs, hit_1s, hit_3s, hit_10s, loss, acc_reconstruct_loss = self.evaluate(batch_time)
 
         # in DP mode (default) make sure if result is scalar, there's another dim in the beginning
         # if self.trainer.use_dp or self.trainer.use_ddp2:
@@ -71,7 +71,8 @@ class TKG_VAE_Module(LightningModule):
             'Hit_1': hit_1s,
             'Hit_3': hit_3s,
             'Hit_10': hit_10s,
-            'val_loss': loss
+            'val_loss': loss,
+            'val_acc_reconstruct_loss': acc_reconstruct_loss
         })
         self.logger.experiment.log(output)
         return output
@@ -83,7 +84,7 @@ class TKG_VAE_Module(LightningModule):
         return {'avg_mrr': avg_mrrs, 'avg_val_loss': avg_val_loss}
 
     def test_step(self, batch_time, batch_idx):
-        mrrs, hit_1s, hit_3s, hit_10s, loss = self.evaluate(batch_time)
+        mrrs, hit_1s, hit_3s, hit_10s, loss, acc_reconstruct_loss = self.evaluate(batch_time)
 
         # in DP mode (default) make sure if result is scalar, there's another dim in the beginning
         # if self.trainer.use_dp or self.trainer.use_ddp2:
@@ -93,7 +94,8 @@ class TKG_VAE_Module(LightningModule):
             'Hit_1': hit_1s,
             'Hit_3': hit_3s,
             'Hit_10': hit_10s,
-            'test_loss': loss
+            'test_loss': loss,
+            'test_acc_reconstruct_loss': acc_reconstruct_loss
         })
         self.logger.experiment.log(output)
         return output
@@ -173,10 +175,6 @@ class TKG_VAE_Module(LightningModule):
             self.ent_prior_means = self.mean_encoder(hidden_size, embed_size)
             self.ent_prior_stds = self.std_encoder(hidden_size, embed_size)
 
-            # self.rel_prior_means = self.mean_encoder(hidden_size, embed_size)
-            # self.rel_prior_stds = self.std_encoder(hidden_size, embed_size)
-            # self.rel_prior_means = torch.zeros(num_rels * 2, embed_size).cuda() if self.use_cuda else torch.zeros(num_rels * 2, embed_size)
-            # self.rel_prior_std = torch.ones(num_rels * 2, embed_size).cuda() if self.use_cuda else torch.ones(num_rels * 2, embed_size)
             self.rel_prior_means = nn.Parameter(torch.zeros(num_rels * 2, embed_size), requires_grad=False)
             self.rel_prior_std = nn.Parameter(torch.ones(num_rels * 2, embed_size), requires_grad=False)
         if self.use_rgcn:
@@ -208,13 +206,20 @@ class TKG_VAE_Module(LightningModule):
             nn.Linear(hidden_size, embed_size),
             nn.Softplus())
 
-    def link_classification_loss(self, ent_mean, ent_std, triplets, labels):
+    def link_classification_loss(self, ent_mean, ent_std, triplets, labels, val=False):
         # triplets is a list of data samples (positive and negative)
         # each row in the triplets is a 3-tuple of (source, relation, destination)
         # import pdb; pdb.set_trace()
-        s = reparametrize(ent_mean[triplets[:,0]], ent_std[triplets[:,0]], self.use_cuda)
-        r = reparametrize(self.rel_enc_means[triplets[:,1]], F.softplus(self.rel_enc_stds[triplets[:,1]]), self.use_cuda)
-        o = reparametrize(ent_mean[triplets[:,2]], ent_std[triplets[:,2]], self.use_cuda)
+        if val:
+            s = ent_mean[triplets[:,0]]
+            r = self.rel_enc_means[triplets[:,1]]
+            o = ent_mean[triplets[:,2]]
+            labels = triplets.new_ones(triplets.shape[0]).float()
+            # print(labels)
+        else:
+            s = reparametrize(ent_mean[triplets[:,0]], ent_std[triplets[:,0]], self.use_cuda)
+            r = reparametrize(self.rel_enc_means[triplets[:,1]], F.softplus(self.rel_enc_stds[triplets[:,1]]), self.use_cuda)
+            o = reparametrize(ent_mean[triplets[:,2]], ent_std[triplets[:,2]], self.use_cuda)
         score = self.calc_score(s, r, o)
         predict_loss = F.binary_cross_entropy_with_logits(score, labels)
         pos_mask = (labels==1)
@@ -251,7 +256,7 @@ class TKG_VAE_Module(LightningModule):
             g_list.append([graph_dict[t] for t in time_seq] + ([None] * (seq_len - len(time_seq))))
 
         g_batched_list = [list(x) for x in zip(*g_list)]
-        return g_batched_list
+        return g_batched_list, time_list
 
     def get_posterior_embeddings(self, g_batched_list_t, cur_h, node_sizes, reverse, val=False):
         batched_graph = dgl.batch(g_batched_list_t)
@@ -259,7 +264,7 @@ class TKG_VAE_Module(LightningModule):
         # sum_num_ents, bsz, hsz
         expanded_h = torch.cat(
             [cur_h[i].unsqueeze(0).expand(size, self.embed_size) for i, size in enumerate(node_sizes)], dim=0)
-        # if self.use_rgcn:
+
         ent_embeds = self.ent_embeds[batched_graph.ndata['id']].view(-1, self.embed_size)
         batched_graph.ndata['h'] = torch.cat([ent_embeds, expanded_h], dim=-1)
 
@@ -297,7 +302,8 @@ class TKG_VAE_Module(LightningModule):
 
     def evaluate(self, t_list, reverse=False):
         h = self.h0.expand(self.num_layers, len(t_list), self.hidden_size).contiguous()
-        g_batched_list = self.get_batch_graph_list(t_list, self.test_seq_len)
+        g_batched_list, time_list = self.get_batch_graph_list(t_list, self.test_seq_len)
+        acc_reconstruct_loss = 0
         for t in range(self.test_seq_len - 1):
             g_batched_list_t = self.filter_none(g_batched_list[t])
             bsz = len(g_batched_list_t)
@@ -308,18 +314,10 @@ class TKG_VAE_Module(LightningModule):
             per_graph_ent_mean = self.get_posterior_embeddings(g_batched_list_t, cur_h, node_sizes, reverse, val=True)
 
             pooled_fact_embeddings = []
-
-            i = 0
-            for ent_mean in per_graph_ent_mean:
-                pdb.set_trace()
-                s = triplets[i][:, 0]
-                r = triplets[i][:, 1]
-                o = triplets[i][:, 2]
-                # pdb.set_trace()
-                pos_facts = torch.cat([ent_mean[s], self.rel_enc_means[r], ent_mean[o]], dim=1)
-                pooled_fact_embedding = torch.max(pos_facts, dim=0)[0]
-                pooled_fact_embeddings.append(pooled_fact_embedding)
-                i += 1
+            for i, ent_mean in enumerate(per_graph_ent_mean):
+                loss, pos_facts = self.link_classification_loss(ent_mean, None, triplets[i], None, val=True)
+                acc_reconstruct_loss += loss
+                pooled_fact_embeddings.append(pos_facts)
 
             _, h = self.rnn(torch.stack(pooled_fact_embeddings, dim=0).unsqueeze(0), h[:, :bsz])
 
@@ -330,28 +328,28 @@ class TKG_VAE_Module(LightningModule):
         # run RGCN on graph to get encoded ent_embeddings and rel_embeddings in G_t
         node_sizes = [len(g.nodes()) for g in test_graph]
         per_graph_ent_mean = self.get_posterior_embeddings(test_graph, cur_h, node_sizes, reverse, val=True)
-        pdb.set_trace()
-        i = 0
+
         mrrs, hit_1s, hit_3s, hit_10s, losses = [], [], [], [], []
-        for ent_mean in per_graph_ent_mean:
-            mrr, hit_1, hit_3, hit_10, val_loss = calc_metrics(ent_mean, self.rel_enc_means, triplets[i], self.calc_score)
+        for i, ent_mean in enumerate(per_graph_ent_mean):
+            mrr, hit_1, hit_3, hit_10 = calc_metrics(ent_mean, self.rel_enc_means, triplets[i])
+            val_loss, _ = self.link_classification_loss(ent_mean, None, triplets[i], None, val=True)
             mrrs.append(mrr)
             hit_1s.append(hit_1)
             hit_3s.append(hit_3)
             hit_10s.append(hit_10)
             losses.append(val_loss.item())
-            i += 1
 
-        return np.mean(mrrs), np.mean(hit_1s), np.mean(hit_3s), np.mean(hit_10s), np.sum(losses)
+        return np.mean(mrrs), np.mean(hit_1s), np.mean(hit_3s), np.mean(hit_10s), np.sum(losses), acc_reconstruct_loss
 
     def forward(self, t_list, reverse=False):
         h = self.h0.expand(self.num_layers, len(t_list), self.hidden_size).contiguous()
-        g_batched_list = self.get_batch_graph_list(t_list, self.train_seq_len)
+        g_batched_list, time_list = self.get_batch_graph_list(t_list, self.train_seq_len)
         # pdb.set_trace()
         # kld_loss = torch.tensor(0.0).cuda() if self.use_cuda else torch.tensor(0.0)
         kld_loss = 0
         reconstruct_loss = 0
         for t in range(self.train_seq_len):
+            # pdb.set_trace()
             g_batched_list_t = self.filter_none(g_batched_list[t])
             bsz = len(g_batched_list_t)
             triplets, labels = samples_labels(g_batched_list_t, self.negative_rate, self.use_cuda, self.num_pos_facts)
