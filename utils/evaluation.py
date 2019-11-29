@@ -1,7 +1,8 @@
 import torch
+import torch.nn.functional as F
 
 
-def calc_metrics(ent_mean, rel_enc_means, test_triplets, eval_bz=100):
+def calc_metrics(ent_mean, rel_enc_means, test_triplets, calc_score, eval_bz=100):
     with torch.no_grad():
         s = test_triplets[:, 0]
         r = test_triplets[:, 1]
@@ -15,15 +16,20 @@ def calc_metrics(ent_mean, rel_enc_means, test_triplets, eval_bz=100):
 
         ranks = torch.cat([ranks_s, ranks_o])
         ranks += 1 # change to 1-indexed
+        # labels = torch.ones(test_size).float()
+        labels = test_triplets.new_ones(test_size).float()
+        score = calc_score(ent_mean[s], rel_enc_means[r], ent_mean[o])
+        # import pdb; pdb.set_trace()
+        predict_loss = F.binary_cross_entropy_with_logits(score, labels)
 
         mrr = torch.mean(1.0 / ranks.float()).item()
         # print("MRR (raw): {:.6f}".format(mrr.item()))
         hit_1 = torch.mean((ranks <= 1).float()).item()
         hit_3 = torch.mean((ranks <= 3).float()).item()
         hit_10 = torch.mean((ranks <= 10).float()).item()
-        pos_facts = torch.cat([ent_mean[s], rel_enc_means[r], ent_mean[o]], dim=1)
+        # pos_facts = torch.cat([ent_mean[s], rel_enc_means[r], ent_mean[o]], dim=1)
 
-    return mrr, hit_1, hit_3, hit_10, torch.max(pos_facts, dim=0)[0]
+    return mrr, hit_1, hit_3, hit_10, predict_loss
 
 
 def perturb_and_get_rank(ent_mean, rel_enc_means, a, r, b, test_size, batch_size=100):
@@ -32,7 +38,7 @@ def perturb_and_get_rank(ent_mean, rel_enc_means, a, r, b, test_size, batch_size
     n_batch = (test_size + batch_size - 1) // batch_size
     ranks = []
     for idx in range(n_batch):
-        print("batch {} / {}".format(idx, n_batch))
+        # print("batch {} / {}".format(idx, n_batch))
         batch_start = idx * batch_size
         batch_end = min(test_size, (idx + 1) * batch_size)
         batch_a = a[batch_start: batch_end]

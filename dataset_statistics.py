@@ -1,9 +1,9 @@
-from dataset import *
-from args import process_args
+from utils.dataset import *
+from utils.args import process_args
 import pdb
 import networkx as nx
 import matplotlib.pyplot as plt
-from models.TKG_VRE import VKG_VRE
+# from models.TKG_VRE import VKG_VAE
 
 
 def stringtify_graph_nodes_edges(graph, id2ent, id2rel):
@@ -23,7 +23,7 @@ def calc_num_edges_statistics_for_t(graph):
     plt.hist(degrees, bins=np.max(degrees) - np.min(degrees))
     plt.xlabel("degree per entity")
     plt.ylabel("# entities")
-    plt.show()
+    plt.savefig(os.path.join(fig_path, "degree_per_entity.png"))
     plt.clf()
 
 
@@ -39,7 +39,8 @@ def calc_num_facts_per_rel(graph):
     print("Number of edges: {}".format(len(graph.edges)))
     rel_counts = list(rel_count.values())
     plt.hist(rel_counts, bins=np.max(rel_counts) - np.min(rel_counts))
-    plt.show()
+
+    plt.savefig(os.path.join(fig_path, "num_facts_per_rel.png"))
     plt.clf()
 
 
@@ -101,22 +102,22 @@ def plot_rel_over_time(edges_hist):
     plt.hist(mutate_intervals, bins=np.max(mutate_intervals) - np.min(mutate_intervals))
     plt.xlabel("mutate intervals")
     plt.ylabel("# intervals")
-    plt.show()
+    plt.savefig(os.path.join(fig_path, "rel_mutation_interval.png"))
     plt.clf()
     plt.hist(repeat_intervals, bins=np.max(repeat_intervals) - np.min(repeat_intervals))
     plt.xlabel("repeat intervals")
     plt.ylabel("# intervals")
-    plt.show()
+    plt.savefig(os.path.join(fig_path, "rel_repeat_interval.png"))
     plt.clf()
     plt.hist(hist_events, bins=np.max(hist_events) - np.min(hist_events))
     plt.xlabel("hist events")
     plt.ylabel("# entity pairs")
-    plt.show()
+    plt.savefig(os.path.join(fig_path, "num_hist_event_per_ent_pair.png"))
     plt.clf()
     plt.hist(num_rel_types, bins=np.max(num_rel_types) - np.min(num_rel_types))
     plt.xlabel("relation types")
     plt.ylabel("# entity pairs")
-    plt.show()
+    plt.savefig(os.path.join(fig_path, "num_hist_rel_types_per_ent_pair.png"))
     plt.clf()
 
 def plot_node_change_over_time(graphs):
@@ -134,17 +135,17 @@ def plot_node_change_over_time(graphs):
     plt.plot(births)
     plt.xlabel("time")
     plt.ylabel("# entity births")
-    plt.show()
+    plt.savefig(os.path.join(fig_path, "num_entity_births.png"))
     plt.clf()
     plt.plot(deaths)
     plt.xlabel("time")
     plt.ylabel("# entity deaths")
-    plt.show()
+    plt.savefig(os.path.join(fig_path, "num_entity_deaths.png"))
     plt.clf()
     plt.plot(commons)
     plt.xlabel("time")
     plt.ylabel("# entity commons")
-    plt.show()
+    plt.savefig(os.path.join(fig_path, "num_entity_commons.png"))
     plt.clf()
 
 
@@ -163,17 +164,17 @@ def plot_edge_over_time(graphs):
     plt.plot(births)
     plt.xlabel("time")
     plt.ylabel("# edge births")
-    plt.show()
+    plt.savefig(os.path.join(fig_path, "num_edge_births.png"))
     plt.clf()
     plt.plot(deaths)
     plt.xlabel("time")
     plt.ylabel("# edge deaths")
-    plt.show()
+    plt.savefig(os.path.join(fig_path, "num_edge_deaths.png"))
     plt.clf()
     plt.plot(commons)
     plt.xlabel("time")
     plt.ylabel("# edge commons")
-    plt.show()
+    plt.savefig(os.path.join(fig_path, "num_edge_commons.png"))
     plt.clf()
 
 
@@ -235,29 +236,30 @@ def plot_tail_change_over_time(graphs, stringtify=False):
     plt.hist(mutate_intervals, bins=np.max(mutate_intervals) - np.min(mutate_intervals))
     plt.xlabel("mutate intervals")
     plt.ylabel("# intervals")
-    plt.show()
+    plt.savefig(os.path.join(fig_path, "tail_mutate_interval.png"))
     plt.clf()
     plt.hist(repeat_intervals, bins=np.max(repeat_intervals) - np.min(repeat_intervals) + 1)
     plt.hist(repeat_intervals)
     plt.xlabel("repeat intervals")
     plt.ylabel("# intervals")
-    plt.show()
+    plt.savefig(os.path.join(fig_path, "tail_repeate_interval.png"))
     plt.clf()
     plt.hist(concurrents, bins=np.max(concurrents) - np.min(concurrents))
     plt.xlabel("# concurrent events")
     plt.ylabel("# head-rel pairs")
-    plt.show()
+    plt.savefig(os.path.join(fig_path, "num_concurrent_events_per_head_rel.png"))
     plt.clf()
     plt.hist(hist_events, bins=np.max(hist_events) - np.min(hist_events))
     plt.xlabel("# hist events")
     plt.ylabel("# head-rel pairs")
-    plt.show()
+    plt.savefig(os.path.join(fig_path, "num_hist_events_per_head_rel.png"))
     plt.clf()
     plt.hist(num_rel_types, bins=np.max(num_rel_types) - np.min(num_rel_types))
     plt.xlabel("# tail types")
     plt.ylabel("# head-rel pairs")
-    plt.show()
+    plt.savefig(os.path.join(fig_path, "num_tail_types_per_head_rel.png"))
     plt.clf()
+
 
 def plot_num_facts_nodes_over_time(graphs):
     num_nodes = []
@@ -269,13 +271,14 @@ def plot_num_facts_nodes_over_time(graphs):
     plt.plot(num_nodes)
     plt.xlabel("time")
     plt.ylabel("# nodes")
-    plt.show()
+    plt.savefig(os.path.join(fig_path, "num_nodes_over_time.png"))
     plt.clf()
     plt.plot(num_facts)
     plt.xlabel("time")
     plt.ylabel("# facts")
-    plt.show()
+    plt.savefig(os.path.join(fig_path, "num_edges_over_time.png"))
     plt.clf()
+
 
 if __name__ == '__main__':
     args = process_args()
@@ -295,7 +298,9 @@ if __name__ == '__main__':
     train_graph_dict = build_time_stamp_graph(args)
     times = list(train_graph_dict.keys())
     nx_graphs = [train_graph_dict[i].to_networkx(edge_attrs=['type_s', 'type_o']) for i in times]
-
+    fig_path = os.path.join('figs', args.dataset.split('/')[-1])
+    if not os.path.exists(fig_path):
+        os.mkdir(fig_path)
     # print(nx_graphs)
     # graph = nx_graphs[0].subgraph(list(nx_graphs[0].nodes)[:100])
     # node_lables, edge_labels = stringtify_graph_nodes_edges(graph, id2ent, id2rel)
@@ -307,11 +312,11 @@ if __name__ == '__main__':
 
     edges_hist = calc_hist(nx_graphs, id2ent, id2rel, False)
     plot_rel_over_time(edges_hist)
-    pdb.set_trace()
-
-    for graph in nx_graphs:
-        calc_num_edges_statistics_for_t(graph)
-        calc_num_facts_per_rel(graph)
+    # pdb.set_trace()
+    #
+    # for graph in nx_graphs:
+    #     calc_num_edges_statistics_for_t(graph)
+    #     calc_num_facts_per_rel(graph)
 
 
     # pos = nx.spring_layout(graph)

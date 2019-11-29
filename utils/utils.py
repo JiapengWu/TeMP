@@ -19,11 +19,8 @@ def samples_labels(g_batched_list, negative_rate, use_gpu, num_pos_facts, val=Fa
         if not val:
             sample, label = negative_sampling(triples, len(g.nodes()), negative_rate, num_pos_facts, use_gpu)
         else:
-            sample = triples
-            label = torch.ones(triples.shape[0])
-            if use_gpu:
-                sample = sample.cuda()
-                label = label.cuda()
+            sample = cuda(triples) if use_gpu else triples
+            label = cuda(torch.ones(triples.shape[0])) if use_gpu else torch.ones(triples.shape[0])
 
         samples.append(sample)
         labels.append(label)

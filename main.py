@@ -14,12 +14,13 @@ import json
 if __name__ == '__main__':
     args = process_args()
     torch.manual_seed(args.seed)
-    use_cuda = args.use_cuda = args.n_gpu >= 0 and torch.cuda.is_available()
 
     if args.config:
         args_json = json.load(open(args.config))
         args.__dict__.update(dict(args_json))
 
+    use_cuda = args.use_cuda = args.n_gpu >= 0 and torch.cuda.is_available()
+    # args.n_gpu = torch.cuda.device_count()
     num_ents, num_rels = get_total_number(args.dataset, 'stat.txt')
     if args.dataset == 'ICEWS14':
         train_data, train_times = load_quadruples(args.dataset, 'train.txt')
@@ -32,9 +33,6 @@ if __name__ == '__main__':
         test_data, test_times = load_quadruples(args.dataset, 'test.txt')
         total_data, total_times = load_quadruples(args.dataset, 'train.txt', 'valid.txt','test.txt')
 
-    print(train_times)
-    print(valid_times)
-    print(test_times)
     graph_dict_train, graph_dict_dev, graph_dict_test = build_time_stamp_graph(args)
 
     model = TKG_VAE_Module(args, num_ents, num_rels, graph_dict_train, graph_dict_dev, graph_dict_test, train_times, valid_times, test_times)
@@ -66,13 +64,13 @@ if __name__ == '__main__':
                       # fast_dev_run=args.debug,
                       # log_gpu_memory='min_max' if args.debug else None,
                       distributed_backend=args.distributed_backend,
-                      nb_sanity_val_steps=1,
+                      nb_sanity_val_steps=3,
                       early_stop_callback=early_stop_callback,
-                      train_percent_check=0.1 if args.debug else 0
-                      # print_nan_grads=args.debug
+                      train_percent_check=0.1 if args.debug else 1.0,
+                      # print_nan_grads=True
                       # truncated_bptt_steps=4
                       )
     trainer.fit(model)
-    # trainer.test(model)
+    trainer.test(model)
 
 

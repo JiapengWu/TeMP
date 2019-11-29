@@ -7,7 +7,7 @@ def get_args():
     parser.add_argument("--dataset-dir", type=str, default='data')
     parser.add_argument("-d", "--dataset", type=str, default='ICEWS18')
     parser.add_argument("--score-function", type=str, default='distmult')
-    parser.add_argument("--n-gpu", type=int, default=1)
+    # parser.add_argument("--n-gpu", type=int, default=2)
     parser.add_argument("--distributed_backend", type=str, default='ddp')
     parser.add_argument("--hidden_size", type=int, default=128)
     parser.add_argument("--embed_size", type=int, default=128)
@@ -40,6 +40,7 @@ def get_args():
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--use-rgcn', action='store_true')
     parser.add_argument('--config', '-c', type=str, default=None, help='JSON file with argument for the run.')
+    parser.add_argument("--checkpoint-path", type=str, default=None)
 
     return parser.parse_args()
 
