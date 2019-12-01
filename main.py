@@ -1,17 +1,16 @@
 # from comet_ml import Experiment, ExistingExperiment
 from utils.dataset import *
 from utils.args import process_args
-import pdb
-from models.TKG_VRE import TKG_VAE_Module
+from models.TKG_VRE import TKG_VAE
+from baselines.Static import Static
+from baselines.DiachronicEmbedding import DiachronicEmbedding
 import time
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import EarlyStopping
 # from pytorch_lightning.logging import TestTubeLogger
-import pandas as pd
 from utils.utils import MyTestTubeLogger
 import json
 from pytorch_lightning.callbacks import ModelCheckpoint
-
 
 
 if __name__ == '__main__':
@@ -29,7 +28,7 @@ if __name__ == '__main__':
         train_data, train_times = load_quadruples(args.dataset, 'train.txt')
         valid_data, valid_times = load_quadruples(args.dataset, 'test.txt')
         test_data, test_times = load_quadruples(args.dataset, 'test.txt')
-        total_data, total_times = load_quadruples(args.dataset, 'tain.txt', 'test.txt')
+        total_data, total_times = load_quadruples(args.dataset, 'train.txt', 'test.txt')
     else:
         train_data, train_times = load_quadruples(args.dataset, 'train.txt')
         valid_data, valid_times = load_quadruples(args.dataset, 'valid.txt')
@@ -37,8 +36,13 @@ if __name__ == '__main__':
         total_data, total_times = load_quadruples(args.dataset, 'train.txt', 'valid.txt','test.txt')
 
     graph_dict_train, graph_dict_dev, graph_dict_test = build_time_stamp_graph(args)
-
-    model = TKG_VAE_Module(args, num_ents, num_rels, graph_dict_train, graph_dict_dev, graph_dict_test, train_times, valid_times, test_times)
+    graph_dict_total = {**graph_dict_train, **graph_dict_dev, **graph_dict_test}
+    module = {
+              'VKGRNN': TKG_VAE,
+              "Static": Static,
+              "DE": DiachronicEmbedding
+              }[args.module]
+    model = module(args, num_ents, num_rels, graph_dict_total, train_times, valid_times, test_times)
 
     early_stop_callback = EarlyStopping(
         monitor='avg_val_loss',
@@ -50,14 +54,13 @@ if __name__ == '__main__':
 
     tt_logger = MyTestTubeLogger(
         save_dir="experiments",
-        name="VKGRNN-{}-{}".format(args.dataset.split('/')[-1], args.score_function),
+        name="{}-{}-{}".format(args.module, args.dataset.split('/')[-1], args.score_function),
         debug=False,
         version=time.strftime('%Y%m%d%H%M'),
         create_git_tag=True
     )
-    checkpoint_path = os.path.join(tt_logger.experiment.get_data_path(tt_logger.experiment.name, tt_logger.experiment.version),"checkpoints")
-    # if not os.path.isdir(checkpoint_path):
-    #     os.makedirs(checkpoint_path)
+
+    checkpoint_path = os.path.join(tt_logger.experiment.get_data_path(tt_logger.experiment.name, tt_logger.experiment.version), "checkpoints")
     checkpoint_callback = ModelCheckpoint(
         filepath=checkpoint_path,
         save_best_only=True,
@@ -78,13 +81,14 @@ if __name__ == '__main__':
                       # fast_dev_run=args.debug,
                       # log_gpu_memory='min_max' if args.debug else None,
                       distributed_backend=args.distributed_backend,
-                      nb_sanity_val_steps=1 if args.debug else 5,
+                      nb_sanity_val_steps=0 if args.debug else 5,
                       early_stop_callback=early_stop_callback,
                       train_percent_check=0.1 if args.debug else 1.0,
                       checkpoint_callback=checkpoint_callback
                       # print_nan_grads=True
                       # truncated_bptt_steps=4
                       )
+
     trainer.fit(model)
     trainer.test(model)
 

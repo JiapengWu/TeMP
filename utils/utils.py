@@ -6,26 +6,6 @@ import os
 import json
 
 
-def samples_labels(g_batched_list, negative_rate, use_gpu, num_pos_facts, val=False):
-    samples = []
-    labels = []
-    for g in g_batched_list:
-        if use_gpu:
-            move_dgl_to_cuda(g)
-            triples = torch.stack([g.edges()[0].cuda(), g.edata['type_s'], g.edges()[1].cuda()]).transpose(0, 1)
-        else:
-            triples = torch.stack([g.edges()[0], g.edata['type_s'], g.edges()[1]]).transpose(0, 1)
-
-        if not val:
-            sample, label = negative_sampling(triples, len(g.nodes()), negative_rate, num_pos_facts, use_gpu)
-        else:
-            sample = cuda(triples) if use_gpu else triples
-            label = cuda(torch.ones(triples.shape[0])) if use_gpu else torch.ones(triples.shape[0])
-
-        samples.append(sample)
-        labels.append(label)
-    return samples, labels
-
 
 def move_dgl_to_cuda(g):
     g.ndata.update({k: cuda(g.ndata[k]) for k in g.ndata})
@@ -38,7 +18,7 @@ def cuda(tensor):
     else:
         return tensor
 
-
+'''
 # TODO: check if the sampled triples are in the KB
 def negative_sampling(triples, num_entities, negative_rate, num_pos_facts, use_gpu):
     size_of_batch = min(triples.shape[0], num_pos_facts)
@@ -64,7 +44,7 @@ def negative_sampling(triples, num_entities, negative_rate, num_pos_facts, use_g
     neg_samples[subj, 0] = values[subj]
     neg_samples[obj, 2] = values[obj]
     return torch.cat((pos_samples, neg_samples), dim=0), labels
-
+'''
 
 class MyTestTubeLogger(TestTubeLogger):
     def __init__(self, *args, **kwargs):
@@ -83,3 +63,10 @@ def reparametrize(mean, std, use_cuda):
         eps = cuda(eps)
     return mean + (eps * std)
 
+
+def comp_deg_norm(g):
+    g = g.local_var()
+    in_deg = g.in_degrees(range(g.number_of_nodes())).float().numpy()
+    norm = 1.0 / in_deg
+    norm[np.isinf(norm)] = 0
+    return norm
