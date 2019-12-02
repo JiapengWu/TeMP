@@ -36,6 +36,7 @@ class RGCNLayer(nn.Module):
     def forward(self, g, reverse):
         g = g.local_var()
         if self.self_loop:
+
             loop_message = torch.mm(g.ndata['h'], self.loop_weight)
             if self.dropout is not None:
                 loop_message = self.dropout(loop_message)
@@ -93,13 +94,15 @@ class RGCNBlockLayer(RGCNLayer):
 
 
 class RGCN(nn.Module):
-    def __init__(self, args, hidden_size, embed_size, num_rels):
+    def __init__(self, args, hidden_size, embed_size, num_rels, static=False):
         super(RGCN, self).__init__()
-        self.layer_1 = RGCNBlockLayer(hidden_size + embed_size, hidden_size, 2 * num_rels, args.n_bases,
+        in_feat = embed_size if static else hidden_size + embed_size
+        self.layer_1 = RGCNBlockLayer(in_feat, hidden_size, 2 * num_rels, args.n_bases,
                    activation=F.relu, self_loop=True, dropout=args.dropout)
         self.layer_2 = RGCNBlockLayer(hidden_size, hidden_size, 2 * num_rels, args.n_bases,
                    activation=None, self_loop=True, dropout=args.dropout)
 
     def forward(self, batched_graph, reverse):
+
         batched_graph = self.layer_1(batched_graph, reverse)
         return self.layer_2(batched_graph, reverse)

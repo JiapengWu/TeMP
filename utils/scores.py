@@ -1,7 +1,14 @@
 import torch
-def distmult(s, r, o):
-    return torch.sum(s * r * o, dim=1)
 
+
+def distmult(s, r, o, mode='single'):
+    # import pdb; pdb.set_trace()
+    if mode == 'tail':
+        return torch.sum((s * r).unsqueeze(1) * o, dim=-1)
+    elif mode == 'head':
+        return torch.sum(s * (r * o).unsqueeze(1), dim=-1)
+    else:
+        return torch.sum(s * r * o, dim=-1)
 
 def complex(s, r, o):
     half_size = s.shape[1] / 2

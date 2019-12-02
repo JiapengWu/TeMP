@@ -11,6 +11,8 @@ def move_dgl_to_cuda(g):
     g.ndata.update({k: cuda(g.ndata[k]) for k in g.ndata})
     g.edata.update({k: cuda(g.edata[k]) for k in g.edata})
 
+def filter_none(l):
+    return list(filter(lambda x: x is not None, l))
 
 def cuda(tensor):
     if tensor.device == torch.device('cpu'):

@@ -1,5 +1,4 @@
 import torch
-import torch.nn.functional as F
 
 
 def calc_metrics(ent_mean, rel_enc_means, test_triplets, eval_bz=100):

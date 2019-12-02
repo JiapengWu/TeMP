@@ -4,6 +4,8 @@ from utils.args import process_args
 from models.TKG_VRE import TKG_VAE
 from baselines.Static import Static
 from baselines.DiachronicEmbedding import DiachronicEmbedding
+from baselines.StaticRGCN import StaticRGCN
+from ablation.RecurrentRGCN import RecurrentRGCN
 import time
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import EarlyStopping
@@ -40,7 +42,9 @@ if __name__ == '__main__':
     module = {
               'VKGRNN': TKG_VAE,
               "Static": Static,
-              "DE": DiachronicEmbedding
+              "DE": DiachronicEmbedding,
+              "SRGCN": StaticRGCN,
+              "RRGCN": RecurrentRGCN
               }[args.module]
     model = module(args, num_ents, num_rels, graph_dict_total, train_times, valid_times, test_times)
 
@@ -81,7 +85,7 @@ if __name__ == '__main__':
                       # fast_dev_run=args.debug,
                       # log_gpu_memory='min_max' if args.debug else None,
                       distributed_backend=args.distributed_backend,
-                      nb_sanity_val_steps=0 if args.debug else 5,
+                      nb_sanity_val_steps=1 if args.debug else 5,
                       early_stop_callback=early_stop_callback,
                       train_percent_check=0.1 if args.debug else 1.0,
                       checkpoint_callback=checkpoint_callback

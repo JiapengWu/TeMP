@@ -15,17 +15,14 @@ class TKG_VAE(TKG_Module):
         super(TKG_VAE, self).__init__(args, num_ents, num_rels, graph_dict_total, train_times, valid_times, test_times)
 
     def build_model(self):
-        self.negative_rate = self.args.negative_rate
         self.half_size = int(self.embed_size / 2)
         self.num_layers = self.args.num_layers
         self.train_seq_len = self.args.train_seq_len
         self.test_seq_len = self.args.test_seq_len
-        self.num_pos_facts = self.args.num_pos_facts
         self.use_VAE = self.args.use_VAE
         self.use_rgcn = self.args.use_rgcn
         # encoder
         # self.enc = nn.Sequential(nn.Linear(embed_size + hidden_size, hidden_size), nn.ReLU())
-        self.calc_score = {'distmult': distmult, 'complex': complex}[self.args.score_function]
 
         # self.ent_enc_means = nn.ModuleList([self.mean_encoder(hidden_size, embed_size)] * num_ents)
         # self.ent_enc_stds = nn.ModuleList([self.std_encoder(hidden_size, embed_size)] * num_ents)
@@ -75,25 +72,29 @@ class TKG_VAE(TKG_Module):
             nn.Linear(hidden_size, embed_size),
             nn.Softplus())
 
+    def train_link_prediction(self, ent_mean, ent_std, triplets, neg_samples, labels, corrupt_tail=True):
+        r = reparametrize(self.rel_enc_means[triplets[:,1]], F.softplus(self.rel_enc_stds[triplets[:,1]]), self.use_cuda)
+        if corrupt_tail:
+            s = reparametrize(ent_mean[triplets[:,0]], ent_std[triplets[:,0]], self.use_cuda)
+            neg_o = reparametrize(ent_mean[neg_samples], ent_std[neg_samples], self.use_cuda)
+            score = self.calc_score(s, r, neg_o, mode='tail')
+        else:
+            neg_s = reparametrize(ent_mean[neg_samples], ent_std[neg_samples], self.use_cuda)
+            o = reparametrize(ent_mean[triplets[:,2]], ent_std[triplets[:,2]], self.use_cuda)
+            score = self.calc_score(neg_s, r, o, mode='head')
+
+        predict_loss = F.cross_entropy(score, labels)
+        return predict_loss
+
     def link_classification_loss(self, ent_mean, ent_std, triplets, labels, val=False):
         # triplets is a list of data samples (positive and negative)
         # each row in the triplets is a 3-tuple of (source, relation, destination)
-        # import pdb; pdb.set_trace()
-        if val:
-            s = ent_mean[triplets[:,0]]
-            r = self.rel_enc_means[triplets[:,1]]
-            o = ent_mean[triplets[:,2]]
-            labels = triplets.new_ones(triplets.shape[0]).float()
-            # print(labels)
-        else:
-            s = reparametrize(ent_mean[triplets[:,0]], ent_std[triplets[:,0]], self.use_cuda)
-            r = reparametrize(self.rel_enc_means[triplets[:,1]], F.softplus(self.rel_enc_stds[triplets[:,1]]), self.use_cuda)
-            o = reparametrize(ent_mean[triplets[:,2]], ent_std[triplets[:,2]], self.use_cuda)
+        s = reparametrize(ent_mean[triplets[:,0]], ent_std[triplets[:,0]], self.use_cuda)
+        r = reparametrize(self.rel_enc_means[triplets[:,1]], F.softplus(self.rel_enc_stds[triplets[:,1]]), self.use_cuda)
+        o = reparametrize(ent_mean[triplets[:,2]], ent_std[triplets[:,2]], self.use_cuda)
         score = self.calc_score(s, r, o)
         predict_loss = F.binary_cross_entropy_with_logits(score, labels)
-        pos_mask = (labels==1)
-        pos_facts = torch.cat([s[pos_mask], r[pos_mask], o[pos_mask]], dim=1)
-        return predict_loss, torch.max(pos_facts, dim=0)[0]
+        return predict_loss
 
     def kld_gauss(self, q_mean, q_std, p_mean, p_std):
         """Using std to compute KLD"""
@@ -119,12 +120,13 @@ class TKG_VAE(TKG_Module):
             length = int(tim / time_unit) + 1
             cur_seq_len = seq_len if seq_len <= length else length
             time_seq = times[length - seq_len:length] if seq_len <= length else times[:length]
-            time_list.append(torch.LongTensor(time_seq))
+            time_list.append(time_seq)
             len_non_zero.append(cur_seq_len)
             g_list.append([graph_dict[t] for t in time_seq] + ([None] * (seq_len - len(time_seq))))
 
+        t_batched_list = [list(x) for x in zip(*time_list)]
         g_batched_list = [list(x) for x in zip(*g_list)]
-        return g_batched_list, time_list
+        return g_batched_list, t_batched_list
 
     def get_posterior_embeddings(self, g_batched_list_t, cur_h, node_sizes, reverse, val=False):
         batched_graph = dgl.batch(g_batched_list_t)
@@ -171,12 +173,7 @@ class TKG_VAE(TKG_Module):
         g_batched_list, time_list = self.get_batch_graph_list(t_list, self.test_seq_len)
         acc_reconstruct_loss = 0
         for t in range(self.test_seq_len - 1):
-            g_batched_list_t = self.filter_none(g_batched_list[t])
-            bsz = len(g_batched_list_t)
-            triplets, _ = samples_labels(g_batched_list_t, self.negative_rate, self.use_cuda, self.num_pos_facts, val=True)
-            cur_h = h[-1][:bsz]  # bsz, hidden_size
-            # run RGCN on graph to get encoded ent_embeddings and rel_embeddings in G_t
-            node_sizes = [len(g.nodes()) for g in g_batched_list_t]
+            g_batched_list_t, bsz, cur_h, triplets, labels, node_sizes = self.get_val_vars(g_batched_list, t, h)
             per_graph_ent_mean = self.get_posterior_embeddings(g_batched_list_t, cur_h, node_sizes, reverse, val=True)
 
             pooled_fact_embeddings = []
@@ -187,18 +184,13 @@ class TKG_VAE(TKG_Module):
 
             _, h = self.rnn(torch.stack(pooled_fact_embeddings, dim=0).unsqueeze(0), h[:, :bsz])
 
-        test_graph = self.filter_none(g_batched_list[-1])
-        bsz = len(test_graph)
-        triplets, labels = samples_labels(test_graph, self.negative_rate, self.use_cuda, self.num_pos_facts, val=True)
-        cur_h = h[-1][:bsz]  # bsz, hidden_size
-        # run RGCN on graph to get encoded ent_embeddings and rel_embeddings in G_t
-        node_sizes = [len(g.nodes()) for g in test_graph]
+        test_graph, bsz, cur_h, triplets, labels, node_sizes = self.get_val_vars(g_batched_list, -1, h)
         per_graph_ent_mean = self.get_posterior_embeddings(test_graph, cur_h, node_sizes, reverse, val=True)
 
         mrrs, hit_1s, hit_3s, hit_10s, losses = [], [], [], [], []
         for i, ent_mean in enumerate(per_graph_ent_mean):
             mrr, hit_1, hit_3, hit_10 = calc_metrics(ent_mean, self.rel_enc_means, triplets[i])
-            val_loss, _ = self.link_classification_loss(ent_mean, None, triplets[i], None, val=True)
+            val_loss, _ = self.reconstruction_loss(ent_mean, None, triplets[i], None, val=True)
             mrrs.append(mrr)
             hit_1s.append(hit_1)
             hit_3s.append(hit_3)
@@ -207,37 +199,56 @@ class TKG_VAE(TKG_Module):
 
         return np.mean(mrrs), np.mean(hit_1s), np.mean(hit_3s), np.mean(hit_10s), np.sum(losses), acc_reconstruct_loss
 
+    def get_pooled_facts(self, ent_means, triples):
+        s = ent_means[triples[:, 0]]
+        r = self.rel_enc_means[triples[:, 1]]
+        o = ent_means[triples[:, 2]]
+        pos_facts = torch.cat([s, r, o], dim=1)
+        return torch.max(pos_facts, dim=0)[0]
+
+    def reconstruction_loss(self, ent_means, triplets, labels):
+        s = ent_means[triplets[:, 0]]
+        r = self.rel_enc_means[triplets[:, 1]]
+        o = ent_means[triplets[:, 2]]
+        score = self.calc_score(s, r, o)
+        predict_loss = F.binary_cross_entropy_with_logits(score, labels)
+        return predict_loss
+
+
     def forward(self, t_list, reverse=False):
         h = self.h0.expand(self.num_layers, len(t_list), self.hidden_size).contiguous()
-        g_batched_list, time_list = self.get_batch_graph_list(t_list, self.train_seq_len)
-        # pdb.set_trace()
-        # kld_loss = torch.tensor(0.0).cuda() if self.use_cuda else torch.tensor(0.0)
+        g_batched_list, time_batched_list = self.get_batch_graph_list(t_list, self.train_seq_len)
         kld_loss = 0
         reconstruct_loss = 0
+        if len(time_batched_list) == 0:
+            return h.new_zeros(1).requires_grad_(True), h.new_zeros(1).requires_grad_(True)
+
         for t in range(self.train_seq_len):
             # pdb.set_trace()
-            g_batched_list_t = self.filter_none(g_batched_list[t])
+            g_batched_list_t, time_batched_list_t = self.filter_none(g_batched_list[t]), self.filter_none(time_batched_list[t])
             bsz = len(g_batched_list_t)
-            triplets, labels = samples_labels(g_batched_list_t, self.negative_rate, self.use_cuda, self.num_pos_facts)
             cur_h = h[-1][:bsz]  # bsz, hidden_size
             # run RGCN on graph to get encoded ent_embeddings and rel_embeddings in G_t
             node_sizes = [len(g.nodes()) for g in g_batched_list_t]
+            triplets, neg_tail_samples, neg_head_samples, labels = self.corrupter.samples_labels_train(
+                time_batched_list_t, g_batched_list_t)
+
             per_graph_ent_mean, per_graph_ent_std, ent_enc_means, ent_enc_stds = \
                 self.get_posterior_embeddings(g_batched_list_t, cur_h, node_sizes, reverse)
 
             # run distmult decoding
-            i = 0
             pooled_fact_embeddings = []
+            i = 0
             for ent_mean, ent_std in zip(per_graph_ent_mean, per_graph_ent_std):
-                loss, pos_facts = self.link_classification_loss(ent_mean, ent_std, triplets[i], labels[i])
-                reconstruct_loss += loss
-                pooled_fact_embeddings.append(pos_facts)
+                loss_tail = self.train_link_prediction(ent_mean, ent_std, triplets[i], neg_tail_samples[i], labels[i], corrupt_tail=True)
+                loss_head = self.train_link_prediction(ent_mean, ent_std, triplets[i], neg_head_samples[i], labels[i], corrupt_tail=False)
+                pooled_fact_embeddings.append(self.get_pooled_facts(ent_mean, triplets[i]))
+                reconstruct_loss += loss_tail + loss_head
                 i += 1
+
             # get all the prior ent_embeddings and rel_embeddings in G_t
-            # bsz, hsz
             if self.use_VAE :
                 prior_ent_mean_extend, prior_ent_std_extend = self.get_prior_from_hidden(node_sizes, cur_h)
-                # compute loss
                 kld_loss += self.kld_gauss(ent_enc_means, ent_enc_stds, prior_ent_mean_extend, prior_ent_std_extend)
                 kld_loss += self.kld_gauss(self.rel_enc_means, F.softplus(self.rel_enc_stds), self.rel_prior_means, self.rel_prior_std)
 
