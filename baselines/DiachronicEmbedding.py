@@ -13,8 +13,8 @@ import pdb
 
 
 class DiachronicEmbedding(TKG_Non_Recurrent):
-    def __init__(self, args, num_ents, num_rels, graph_dict_total, train_times, valid_times, test_times):
-        super(DiachronicEmbedding, self).__init__(args, num_ents, num_rels, graph_dict_total, train_times, valid_times, test_times)
+    def __init__(self, args, num_ents, num_rels, graph_dict_train, graph_dict_val, graph_dict_test):
+        super(DiachronicEmbedding, self).__init__(args, num_ents, num_rels, graph_dict_train, graph_dict_val, graph_dict_test)
 
     def build_model(self):
         self.static_embed_size = math.floor(0.5 * self.embed_size)

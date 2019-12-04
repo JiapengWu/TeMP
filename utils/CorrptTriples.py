@@ -7,23 +7,22 @@ import torch.nn.functional as F
 
 
 class CorruptTriples:
-    def __init__(self, args, graph_dict_total):
+    def __init__(self, args, graph_dict_train):
         self.args = args
         self.negative_rate = args.negative_rate
         self.use_cuda = args.use_cuda
         self.num_pos_facts = args.num_pos_facts
-        self.graph_dict_total = graph_dict_total
+        self.graph_dict_train = graph_dict_train
         self.get_true_hear_and_tail()
 
     def get_true_hear_and_tail(self):
-        self.true_heads = dict()
-        self.true_tails = dict()
-        start = time.time()
-        for t, g in self.graph_dict_total.items():
+        self.true_heads_train = dict()
+        self.true_tails_train = dict()
+        for t, g in self.graph_dict_train.items():
             triples = torch.stack([g.edges()[0], g.edata['type_s'], g.edges()[1]]).transpose(0, 1)
             true_head, true_tail = self.get_true_head_and_tail_per_graph(triples)
-            self.true_heads[t] = true_head
-            self.true_tails[t] = true_tail
+            self.true_heads_train[t] = true_head
+            self.true_tails_train[t] = true_tail
 
     def samples_labels_train(self, t_list, g_batched_list):
         samples = []
@@ -41,7 +40,7 @@ class CorruptTriples:
     def single_graph_negative_sampling(self, t, g):
         t = t.item()
         triples = torch.stack([g.edges()[0], g.edata['type_s'], g.edges()[1]]).transpose(0, 1)
-        sample, neg_tail_sample, neg_head_sample, label = self.negative_sampling(self.true_heads[t], self.true_tails[t], triples, len(g.nodes()))
+        sample, neg_tail_sample, neg_head_sample, label = self.negative_sampling(self.true_heads_train[t], self.true_tails_train[t], triples, len(g.nodes()))
         neg_tail_sample, neg_head_sample, label = torch.from_numpy(neg_tail_sample), torch.from_numpy(neg_head_sample), torch.from_numpy(label)
         if self.use_cuda:
             sample, neg_tail_sample, neg_head_sample, label = cuda(sample), cuda(neg_tail_sample), cuda(neg_head_sample), cuda(label)
@@ -58,8 +57,6 @@ class CorruptTriples:
         neg_tail_samples[:, 0] = triples[:, 2]
         neg_head_samples[:, 0] = triples[:, 0]
 
-        # labels = np.zeros((size_of_batch, 1 + self.negative_rate), dtype=int)
-        # labels[:, 0] = 1
         labels = np.zeros(size_of_batch, dtype=int)
 
         for i in range(size_of_batch):

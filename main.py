@@ -13,7 +13,7 @@ from pytorch_lightning.callbacks import EarlyStopping
 from utils.utils import MyTestTubeLogger
 import json
 from pytorch_lightning.callbacks import ModelCheckpoint
-
+import pdb
 
 if __name__ == '__main__':
     args = process_args()
@@ -26,19 +26,15 @@ if __name__ == '__main__':
     use_cuda = args.use_cuda = args.n_gpu >= 0 and torch.cuda.is_available()
     # args.n_gpu = torch.cuda.device_count()
     num_ents, num_rels = get_total_number(args.dataset, 'stat.txt')
-    if args.dataset == 'data/ICEWS14':
-        train_data, train_times = load_quadruples(args.dataset, 'train.txt')
-        valid_data, valid_times = load_quadruples(args.dataset, 'test.txt')
-        test_data, test_times = load_quadruples(args.dataset, 'test.txt')
-        total_data, total_times = load_quadruples(args.dataset, 'train.txt', 'test.txt')
-    else:
-        train_data, train_times = load_quadruples(args.dataset, 'train.txt')
-        valid_data, valid_times = load_quadruples(args.dataset, 'valid.txt')
-        test_data, test_times = load_quadruples(args.dataset, 'test.txt')
-        total_data, total_times = load_quadruples(args.dataset, 'train.txt', 'valid.txt','test.txt')
 
-    graph_dict_train, graph_dict_dev, graph_dict_test = build_time_stamp_graph(args)
-    graph_dict_total = {**graph_dict_train, **graph_dict_dev, **graph_dict_test}
+    if args.dataset_dir == 'extrapolation':
+        graph_dict_train, graph_dict_val, graph_dict_test = build_extrapolation_time_stamp_graph(args)
+    elif args.dataset_dir == 'interpolation':
+        graph_dict_train, graph_dict_val, graph_dict_test = build_interpolation_graphs(args)
+
+    # pdb.set_trace()
+    # graph_dict_total = {**graph_dict_train, **graph_dict_dev, **graph_dict_test}
+
     module = {
               'VKGRNN': TKG_VAE,
               "Static": Static,
@@ -46,7 +42,8 @@ if __name__ == '__main__':
               "SRGCN": StaticRGCN,
               "RRGCN": RecurrentRGCN
               }[args.module]
-    model = module(args, num_ents, num_rels, graph_dict_total, train_times, valid_times, test_times)
+
+    model = module(args, num_ents, num_rels, graph_dict_train, graph_dict_val, graph_dict_test)
 
     early_stop_callback = EarlyStopping(
         monitor='avg_val_loss',

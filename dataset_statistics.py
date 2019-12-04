@@ -283,7 +283,7 @@ def plot_num_facts_nodes_over_time(graphs):
 if __name__ == '__main__':
     args = process_args()
     num_ents, num_rels = get_total_number(args.dataset, 'stat.txt')
-    if args.dataset == 'data/ICEWS14':
+    if args.dataset == 'extrapolation/ICEWS14':
         train_data, train_times = load_quadruples(args.dataset, 'train.txt')
         valid_data, valid_times = load_quadruples(args.dataset, 'test.txt')
         test_data, test_times = load_quadruples(args.dataset, 'test.txt')
@@ -295,7 +295,7 @@ if __name__ == '__main__':
         total_data, total_times = load_quadruples(args.dataset, 'train.txt', 'valid.txt','test.txt')
     # id2ent, id2rel = id2entrel(args.dataset, num_rels)
     id2ent = id2rel = None
-    train_graph_dict = build_time_stamp_graph(args)
+    train_graph_dict = build_extrapolation_time_stamp_graph(args)
     times = list(train_graph_dict.keys())
     nx_graphs = [train_graph_dict[i].to_networkx(edge_attrs=['type_s', 'type_o']) for i in times]
     fig_path = os.path.join('figs', args.dataset.split('/')[-1])

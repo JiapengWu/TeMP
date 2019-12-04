@@ -9,9 +9,8 @@ from ablation.TKG_Recurrent_Module import TKG_Recurrent_Module
 
 
 class RecurrentRGCN(TKG_Recurrent_Module):
-    def __init__(self, args, num_ents, num_rels, graph_dict_total, train_times, valid_times, test_times):
-        super(RecurrentRGCN, self).__init__(args, num_ents, num_rels, graph_dict_total, train_times, valid_times,
-                                         test_times)
+    def __init__(self, args, num_ents, num_rels, graph_dict_train, graph_dict_val, graph_dict_test):
+        super(RecurrentRGCN, self).__init__(args, num_ents, num_rels, graph_dict_train, graph_dict_val, graph_dict_test)
 
     def build_model(self):
         self.ent_encoder = RGCN(self.args, self.hidden_size, self.embed_size, self.num_rels)

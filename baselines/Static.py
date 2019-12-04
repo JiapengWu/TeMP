@@ -9,8 +9,8 @@ from baselines.TKG_Non_Recurrent import TKG_Non_Recurrent
 
 
 class Static(TKG_Non_Recurrent):
-    def __init__(self, args, num_ents, num_rels, graph_dict_total, train_times, valid_times, test_times):
-        super(Static, self).__init__(args, num_ents, num_rels, graph_dict_total, train_times, valid_times, test_times)
+    def __init__(self, args, num_ents, num_rels, graph_dict_train, graph_dict_val, graph_dict_test):
+        super(Static, self).__init__(args, num_ents, num_rels, graph_dict_train, graph_dict_val, graph_dict_test)
 
     def build_model(self):
         self.negative_rate = self.args.negative_rate

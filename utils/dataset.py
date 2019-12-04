@@ -5,6 +5,8 @@ import pickle
 import dgl
 from torch.utils.data import Dataset
 import torch
+from utils.args import process_args
+
 
 def load_quadruples(dataset_path, fileName, fileName2=None, fileName3=None):
     with open(os.path.join(dataset_path, fileName), 'r') as fr:
@@ -44,7 +46,6 @@ def load_quadruples(dataset_path, fileName, fileName2=None, fileName3=None):
     times.sort()
     return np.asarray(quadrupleList), np.asarray(times)
 
-
 def get_data_with_t(data, tim):
     triples = [[quad[0], quad[1], quad[2]] for quad in data if quad[3] == tim]
     return np.array(triples)
@@ -65,15 +66,16 @@ def get_total_number(dataset_path, fileName="stat.txt"):
 
 
 def get_big_graph(data, num_rels):
-    src, rel, dst = data.transpose()
+    src, rel, dst = data.transpose() # node ids
+    # uniq_v: range from 0 to the number of nodes acting as g.nodes();
+    # edges: uniq_v[edges] = np.unique((src, dst)), mapping from (o, len(nodes)) to the original node idx
     uniq_v, edges = np.unique((src, dst), return_inverse=True)
-    # if uniq_v.max() + 1 != len(uniq_v):
-    #     import pdb; pdb.set_trace()
 
     src, dst = np.reshape(edges, (2, -1))
     g = dgl.DGLGraph()
     g.add_nodes(len(uniq_v))
     src, dst = np.concatenate((src, dst)), np.concatenate((dst, src))
+
     rel_o = np.concatenate((rel + num_rels, rel))
     rel_s = np.concatenate((rel, rel + num_rels))
     g.add_edges(src, dst)
@@ -88,8 +90,7 @@ def get_big_graph(data, num_rels):
         idx += 1
     return g
 
-
-def build_time_stamp_graph(args):
+def build_extrapolation_time_stamp_graph(args):
     train_graph_dict_path = os.path.join(args.dataset, 'train_graphs.txt')
     dev_graph_dict_path = os.path.join(args.dataset, 'dev_graphs.txt')
     test_graph_dict_path = os.path.join(args.dataset, 'test_graphs.txt')
@@ -106,7 +107,6 @@ def build_time_stamp_graph(args):
             dev_data, dev_times = load_quadruples(args.dataset, 'valid.txt')
         num_e, num_r = get_total_number(args.dataset, 'stat.txt')
 
-
         for times, datas, path, graph_dict in zip([
             train_times, dev_times, test_times],
                 [train_data, dev_data, test_data],
@@ -117,8 +117,120 @@ def build_time_stamp_graph(args):
                 print(str(tim) + '\t' + str(max(times)))
                 data = get_data_with_t(datas, tim)
                 graph_dict[tim] = get_big_graph(data, num_r)
-                with open(path, 'wb') as fp:
-                    pickle.dump(graph_dict, fp)
+            with open(path, 'wb') as fp:
+                pickle.dump(graph_dict, fp)
+
+    else:
+        graph_dicts = []
+        for path in train_graph_dict_path, dev_graph_dict_path, test_graph_dict_path:
+            with open(path, 'rb') as f:
+                graph_dicts.append(pickle.load(f))
+        graph_dict_train, graph_dict_dev, graph_dict_test = graph_dicts
+    return graph_dict_train, graph_dict_dev, graph_dict_test
+
+
+
+def get_train_val_test_graph_at_t(triples, num_rels):
+    train_triples, val_triples, test_triples = \
+        np.array(triples['train']), np.array(triples['valid']), np.array(triples['test'])
+
+    total_triples = np.concatenate([train_triples, val_triples, test_triples], axis=0)
+
+    src_total, rel_total, dst_total = total_triples.transpose()  # node ids
+    # g.nodes() = len(uniq_v), uniq_v are the idx of nodes
+    # edges: uniq_v[edges] = np.concat((src, dst)), mapping from (0, len(nodes)) to the original node idx
+    uniq_v, edges = np.unique((src_total, dst_total), return_inverse=True)
+    src, dst = np.reshape(edges, (2, -1))
+
+    g_train = dgl.DGLGraph()
+    g_val = dgl.DGLGraph()
+    g_test = dgl.DGLGraph()
+
+    src_train, rel_train, dst_train = src[:len(train_triples)], rel_total[:len(train_triples)], dst[:len(train_triples)]
+
+    src_val, rel_val, dst_val = src[len(train_triples): len(train_triples) + len(val_triples)], \
+                                rel_total[len(train_triples): len(train_triples) + len(val_triples)], \
+                                dst[len(train_triples): len(train_triples) + len(val_triples)]
+
+    src_test, rel_test, dst_test = src[len(train_triples) + len(val_triples):], \
+                                   rel_total[len(train_triples) + len(val_triples):], \
+                                   dst[len(train_triples) + len(val_triples):]
+
+
+    for graph, cur_src, cur_rel, cur_dst in zip(
+        [g_train, g_val, g_test],
+        [src_train, src_val, src_test],
+        [rel_train, rel_val, rel_test],
+        [dst_train, dst_val, dst_test]
+    ):
+        # import pdb; pdb.set_trace()
+        cur_src, cur_dst = np.concatenate((cur_src, cur_dst)), np.concatenate((cur_dst, cur_src))
+        graph.add_nodes(len(uniq_v))
+        graph.add_edges(cur_src, cur_dst)
+
+        norm = comp_deg_norm(graph)
+
+        rel_o = np.concatenate((cur_rel + num_rels, cur_rel))
+        rel_s = np.concatenate((cur_rel, cur_rel + num_rels))
+        graph.ndata.update({'id': torch.from_numpy(uniq_v).long().view(-1, 1), 'norm': norm.view(-1, 1)})
+        graph.edata['type_s'] = torch.LongTensor(rel_s)
+        graph.edata['type_o'] = torch.LongTensor(rel_o)
+        graph.ids = {}
+        idx = 0
+        for id in uniq_v:
+            graph.ids[id] = idx
+            idx += 1
+    if type(g_train) == type(None) or type(g_val) == type(None) or type(g_test) == type(None):
+        import pdb; pdb.set_trace()
+    return g_train, g_val, g_test
+
+
+def load_quadruples_interpolation(dataset_path, train_fname, valid_fname, test_fname, total_times):
+    time2triples = {}
+    for tim in total_times:
+        time2triples[tim] = {"train": [], "valid": [], "test": []}
+
+    for fname, mode in zip([train_fname, valid_fname, test_fname], ["train", "valid", "test"]):
+        with open(os.path.join(dataset_path, fname), 'r') as fr:
+            for line in fr:
+                line_split = line.split()
+                head = int(line_split[0])
+                rel = int(line_split[1])
+                tail = int(line_split[2])
+                time = int(line_split[3])
+                time2triples[time][mode].append((head, rel, tail))
+
+    return time2triples
+
+
+def build_interpolation_graphs(args):
+    train_graph_dict_path = os.path.join(args.dataset, 'train_graphs.txt')
+    dev_graph_dict_path = os.path.join(args.dataset, 'dev_graphs.txt')
+    test_graph_dict_path = os.path.join(args.dataset, 'test_graphs.txt')
+
+    if not os.path.isfile(train_graph_dict_path) or not os.path.isfile(dev_graph_dict_path) or not os.path.isfile(test_graph_dict_path):
+
+        total_data, total_times = load_quadruples(args.dataset, 'train.txt', 'valid.txt', 'test.txt')
+        time2triples = load_quadruples_interpolation(args.dataset, 'train.txt', 'valid.txt', 'test.txt', total_times)
+        num_e, num_r = get_total_number(args.dataset, 'stat.txt')
+
+        graph_dict_train = {}
+        graph_dict_dev = {}
+        graph_dict_test = {}
+        for tim in total_times:
+            print(str(tim) + '\t' + str(max(total_times)))
+
+            g_train, g_val, g_test = get_train_val_test_graph_at_t(time2triples[tim], num_r)
+            graph_dict_train[tim] = g_train
+            graph_dict_dev[tim] = g_val
+            graph_dict_test[tim] = g_test
+
+        for graph_dict, path in zip(
+            [graph_dict_train, graph_dict_dev, graph_dict_test],
+            [train_graph_dict_path, dev_graph_dict_path, test_graph_dict_path]
+        ):
+            with open(path, 'wb') as fp:
+                pickle.dump(graph_dict, fp)
 
     else:
         graph_dicts = []
@@ -156,3 +268,8 @@ class TimeDataset(Dataset):
 
     def __len__(self):
         return len(self.times)
+
+
+if __name__ == '__main__':
+    args = process_args()
+    build_interpolation_graphs(args)
