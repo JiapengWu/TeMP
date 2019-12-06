@@ -58,12 +58,10 @@ class MyTestTubeLogger(TestTubeLogger):
             configfile.write(json.dumps(vars(args), indent=2, sort_keys=True))
 
 
-def reparametrize(mean, std, use_cuda):
+def reparametrize(mean, std):
     """using std to sample"""
-    eps = torch.FloatTensor(std.size()).normal_()
-    if use_cuda:
-        eps = cuda(eps)
-    return mean + (eps * std)
+    eps = torch.randn_like(std)
+    return eps.mul(std).add_(mean)
 
 
 def comp_deg_norm(g):
