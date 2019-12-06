@@ -15,6 +15,7 @@ import json
 from pytorch_lightning.callbacks import ModelCheckpoint
 import pdb
 
+
 if __name__ == '__main__':
     args = process_args()
     torch.manual_seed(args.seed)
@@ -46,11 +47,11 @@ if __name__ == '__main__':
     model = module(args, num_ents, num_rels, graph_dict_train, graph_dict_val, graph_dict_test)
 
     early_stop_callback = EarlyStopping(
-        monitor='avg_val_loss',
+        monitor='avg_mrr',
         min_delta=0.00,
         patience=args.patience,
         verbose=False,
-        mode='min'
+        mode='max'
     )
 
     tt_logger = MyTestTubeLogger(
@@ -66,8 +67,8 @@ if __name__ == '__main__':
         filepath=checkpoint_path,
         save_best_only=True,
         verbose=True,
-        monitor='avg_val_loss',
-        mode='min',
+        monitor='avg_mrr',
+        mode='max',
         prefix=''
     )
 
@@ -80,14 +81,12 @@ if __name__ == '__main__':
                       amp_level=args.amp_level,
                       max_nb_epochs=args.max_nb_epochs,
                       # fast_dev_run=args.debug,
-                      # log_gpu_memory='min_max' if args.debug else None,
                       distributed_backend=args.distributed_backend,
                       nb_sanity_val_steps=1 if args.debug else 5,
                       early_stop_callback=early_stop_callback,
                       train_percent_check=0.1 if args.debug else 1.0,
                       checkpoint_callback=checkpoint_callback
                       # print_nan_grads=True
-                      # truncated_bptt_steps=4
                       )
 
     trainer.fit(model)

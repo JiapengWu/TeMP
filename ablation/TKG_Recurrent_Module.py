@@ -40,8 +40,9 @@ class TKG_Recurrent_Module(TKG_Module):
 
             _, h = self.rnn(torch.stack(pooled_fact_embeddings, dim=0).unsqueeze(0), h[:, :bsz])
         # import pdb; pdb.set_trace()
-        test_graph, bsz, cur_h, triplets, labels, node_sizes = self.get_val_vars(g_batched_list, -1, h)
+        test_graph, bsz, cur_h, triplets, labels, _ = self.get_val_vars(g_batched_list, -1, h)
         train_graph = filter_none(g_train_batched_list[-1])
+        node_sizes = [len(g.nodes()) for g in train_graph]
         per_graph_ent_embeds = self.get_per_graph_ent_embeds(train_graph, cur_h, node_sizes)
 
         mrrs, hit_1s, hit_3s, hit_10s, losses = [], [], [], [], []

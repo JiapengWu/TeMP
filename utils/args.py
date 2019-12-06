@@ -12,7 +12,7 @@ def get_args():
     parser.add_argument("--distributed_backend", type=str, default='ddp')
     parser.add_argument("--hidden_size", type=int, default=128)
     parser.add_argument("--embed_size", type=int, default=128)
-    parser.add_argument("--max-nb-epochs", type=int, default=100)
+    parser.add_argument("--max-nb-epochs", type=int, default=1000)
 
     # LSTM parameters
     parser.add_argument("--dropout", type=float, default=0.1)

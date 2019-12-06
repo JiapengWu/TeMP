@@ -39,8 +39,8 @@ class TKG_Module(LightningModule):
             loss = loss.unsqueeze(0)
         tqdm_dict = {'train_loss': loss}
         output = OrderedDict({
-            'train_reconstruction_loss': torch.tensor(reconstruct_loss) if type(kld_loss) != torch.Tensor else reconstruct_loss,
-            'train_KLD_loss': kld_loss,
+            'train_reconstruction_loss': reconstruct_loss,
+            'train_KLD_loss': torch.tensor(kld_loss) if type(kld_loss) != torch.Tensor else kld_loss,
             'loss': loss,
             'progress_bar': tqdm_dict,
             'log': tqdm_dict
@@ -85,6 +85,7 @@ class TKG_Module(LightningModule):
         # in DP mode (default) make sure if result is scalar, there's another dim in the beginning
         if self.trainer.use_dp or self.trainer.use_ddp2:
             loss = loss.unsqueeze(0)
+
         output = OrderedDict({
             'MRR': mrrs,
             'Hit_1': hit_1s,
@@ -193,7 +194,7 @@ class TKG_Module(LightningModule):
             length = int(tim / time_unit) + 1
             cur_seq_len = seq_len if seq_len <= length else length
             time_seq = times[length - seq_len:length] if seq_len <= length else times[:length]
-            time_list.append(time_seq)
+            time_list.append(time_seq + ([None] * (seq_len - len(time_seq))))
             len_non_zero.append(cur_seq_len)
             g_list.append([graph_dict[t] for t in time_seq] + ([None] * (seq_len - len(time_seq))))
 

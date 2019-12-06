@@ -41,7 +41,7 @@ class StaticRGCN(TKG_Non_Recurrent):
             hit_3s.append(hit_3)
             hit_10s.append(hit_10)
             losses.append(loss.item())
-        return np.mean(mrrs), np.mean(hit_1s), np.mean(hit_3s), np.mean(hit_10s), np.sum(losses), 0
+        return np.mean(mrrs), np.mean(hit_1s), np.mean(hit_3s), np.mean(hit_10s), np.sum(losses)
 
     def forward(self, t_list, reverse=False):
         kld_loss = 0

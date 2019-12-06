@@ -38,9 +38,6 @@ class TKG_VAE(TKG_Recurrent_Module):
         self.ent_enc_means = RGCN(self.args, self.hidden_size, self.embed_size, self.num_rels)
         self.ent_enc_stds = RGCN(self.args, self.hidden_size, self.embed_size, self.num_rels)
 
-        # self.rel_enc_means = nn.Embedding(num_rels * 2, embed_size)
-        # self.rel_enc_stds = nn.Embedding(num_rels * 2, embed_size)
-
     @staticmethod
     def mean_encoder(hidden_size, embed_size):
         return nn.Linear(hidden_size, embed_size)
