@@ -3,17 +3,18 @@ from utils.dataset import *
 from utils.args import process_args
 from models.TKG_VRE import TKG_VAE
 from baselines.Static import Static
+from baselines.Simple import SimplE
+from baselines.Hyte import Hyte
 from baselines.DiachronicEmbedding import DiachronicEmbedding
 from baselines.StaticRGCN import StaticRGCN
-from ablation.RecurrentRGCN import RecurrentRGCN
+from baselines.RecurrentRGCN import RecurrentRGCN
+from baselines.DRGCN import DRGCN
 import time
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import EarlyStopping
-# from pytorch_lightning.logging import TestTubeLogger
 from utils.utils import MyTestTubeLogger
 import json
 from pytorch_lightning.callbacks import ModelCheckpoint
-import pdb
 
 
 if __name__ == '__main__':
@@ -33,15 +34,17 @@ if __name__ == '__main__':
     elif args.dataset_dir == 'interpolation':
         graph_dict_train, graph_dict_val, graph_dict_test = build_interpolation_graphs(args)
 
-    # pdb.set_trace()
     # graph_dict_total = {**graph_dict_train, **graph_dict_dev, **graph_dict_test}
 
     module = {
               'VKGRNN': TKG_VAE,
+              "Simple": SimplE,
               "Static": Static,
               "DE": DiachronicEmbedding,
+              "Hyte": Hyte,
               "SRGCN": StaticRGCN,
-              "RRGCN": RecurrentRGCN
+              "RRGCN": RecurrentRGCN,
+              "DRGCN": DRGCN
               }[args.module]
 
     model = module(args, num_ents, num_rels, graph_dict_train, graph_dict_val, graph_dict_test)

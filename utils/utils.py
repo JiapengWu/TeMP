@@ -4,8 +4,7 @@ import pdb
 from pytorch_lightning.logging import TestTubeLogger
 import os
 import json
-
-
+import dgl
 
 def move_dgl_to_cuda(g):
     g.ndata.update({k: cuda(g.ndata[k]) for k in g.ndata})
@@ -70,3 +69,22 @@ def comp_deg_norm(g):
     norm = 1.0 / in_deg
     norm[np.isinf(norm)] = 0
     return norm
+
+
+def build_graph_from_triplets(num_nodes, num_rels, triplets):
+    """ Create a DGL graph. The graph is bidirectional because RGCN authors
+        use reversed relations.
+        This function also generates edge type and normalization factor
+        (reciprocal of node incoming degree)
+    """
+    g = dgl.DGLGraph()
+    g.add_nodes(num_nodes)
+    src, rel, dst = triplets
+    src, dst = np.concatenate((src, dst)), np.concatenate((dst, src))
+    rel = np.concatenate((rel, rel + num_rels))
+    edges = sorted(zip(dst, src, rel))
+    dst, src, rel = np.array(edges).transpose()
+    g.add_edges(src, dst)
+    norm = comp_deg_norm(g)
+    print("# nodes: {}, # edges: {}".format(num_nodes, len(src)))
+    return g, rel, norm

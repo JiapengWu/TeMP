@@ -2,8 +2,6 @@ import numpy as np
 import torch
 import pdb
 from utils.utils import cuda
-import time
-import torch.nn.functional as F
 
 
 class CorruptTriples:

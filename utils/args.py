@@ -14,7 +14,6 @@ def get_args():
     parser.add_argument("--embed_size", type=int, default=128)
     parser.add_argument("--max-nb-epochs", type=int, default=1000)
 
-    # LSTM parameters
     parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--num-layers", type=int, default=1)
     parser.add_argument("--lr", type=float, default=1e-3)
@@ -26,7 +25,7 @@ def get_args():
     parser.add_argument("--rgcn-layers", type=int, default=2, help="number of propagation rounds")
     parser.add_argument("--train-seq-len", type=int, default=2)
     parser.add_argument("--test-seq-len", type=int, default=3)
-    parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--seed", type=int, default=123)
     parser.add_argument("--negative-rate", type=int, default=100)
     parser.add_argument('--amp-level', type=str, default='O1', help='apex optimization level.')

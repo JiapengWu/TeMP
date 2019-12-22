@@ -1,29 +1,24 @@
-import numpy as np
-import torch.nn.functional as F
 from models.TKG_Module import TKG_Module
 import time
-from utils.evaluation import calc_metrics
+import torch
+import torch.nn as nn
 
 
 class TKG_Non_Recurrent(TKG_Module):
     def __init__(self, args, num_ents, num_rels, graph_dict_train, graph_dict_val, graph_dict_test):
         super(TKG_Non_Recurrent, self).__init__(args, num_ents, num_rels, graph_dict_train, graph_dict_val, graph_dict_test)
+        self.ent_embeds = nn.Parameter(torch.Tensor(self.num_ents, self.embed_size))
+        self.rel_embeds = nn.Parameter(torch.Tensor(self.num_rels * 2, self.embed_size))
+
+        nn.init.xavier_uniform_(self.ent_embeds, gain=nn.init.calculate_gain('relu'))
+        nn.init.xavier_uniform_(self.rel_embeds, gain=nn.init.calculate_gain('relu'))
 
     def evaluate(self, t_list, val=True):
         graph_dict = self.graph_dict_val if val else self.graph_dict_test
         g_list = [graph_dict[i.item()] for i in t_list]
         per_graph_ent_embeds = self.get_per_graph_ent_embeds(t_list, g_list)
         triplets, labels = self.corrupter.sample_labels_val(g_list)
-        mrrs, hit_1s, hit_3s, hit_10s, losses = [], [], [], [], []
-        for i, ent_embed in enumerate(per_graph_ent_embeds):
-            mrr, hit_1, hit_3, hit_10 = calc_metrics(ent_embed, self.rel_embeds, triplets[i])
-            loss = self.link_classification_loss(ent_embed, self.rel_embeds, triplets[i], labels[i])
-            mrrs.append(mrr)
-            hit_1s.append(hit_1)
-            hit_3s.append(hit_3)
-            hit_10s.append(hit_10)
-            losses.append(loss.item())
-        return np.mean(mrrs), np.mean(hit_1s), np.mean(hit_3s), np.mean(hit_10s), np.sum(losses)
+        return self.calc_metrics(per_graph_ent_embeds, t_list, triplets, labels)
 
     def forward(self, t_list, reverse=False):
         kld_loss = 0
@@ -31,7 +26,7 @@ class TKG_Non_Recurrent(TKG_Module):
         g_list = [self.graph_dict_train[i.item()] for i in t_list]
 
         per_graph_ent_embeds = self.get_per_graph_ent_embeds(t_list, g_list)
-        start = time.time()
+
         triplets, neg_tail_samples, neg_head_samples, labels = self.corrupter.samples_labels_train(t_list, g_list)
 
         for i, ent_embed in enumerate(per_graph_ent_embeds):

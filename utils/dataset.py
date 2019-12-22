@@ -46,6 +46,7 @@ def load_quadruples(dataset_path, fileName, fileName2=None, fileName3=None):
     times.sort()
     return np.asarray(quadrupleList), np.asarray(times)
 
+
 def get_data_with_t(data, tim):
     triples = [[quad[0], quad[1], quad[2]] for quad in data if quad[3] == tim]
     return np.array(triples)
@@ -90,6 +91,7 @@ def get_big_graph(data, num_rels):
         idx += 1
     return g
 
+
 def build_extrapolation_time_stamp_graph(args):
     train_graph_dict_path = os.path.join(args.dataset, 'train_graphs.txt')
     dev_graph_dict_path = os.path.join(args.dataset, 'dev_graphs.txt')
@@ -119,7 +121,6 @@ def build_extrapolation_time_stamp_graph(args):
                 graph_dict[tim] = get_big_graph(data, num_r)
             with open(path, 'wb') as fp:
                 pickle.dump(graph_dict, fp)
-
     else:
         graph_dicts = []
         for path in train_graph_dict_path, dev_graph_dict_path, test_graph_dict_path:
@@ -129,12 +130,19 @@ def build_extrapolation_time_stamp_graph(args):
     return graph_dict_train, graph_dict_dev, graph_dict_test
 
 
-
 def get_train_val_test_graph_at_t(triples, num_rels):
     train_triples, val_triples, test_triples = \
         np.array(triples['train']), np.array(triples['valid']), np.array(triples['test'])
-
-    total_triples = np.concatenate([train_triples, val_triples, test_triples], axis=0)
+    try:
+        total_triples = np.concatenate([train_triples, val_triples, test_triples], axis=0)
+    except:
+        # import pdb; pdb.set_trace()
+        if test_triples.shape[0] == 0 and val_triples.shape[0] == 0:
+            total_triples = train_triples
+        elif test_triples.shape[0] == 0:
+            total_triples = np.concatenate([train_triples, val_triples], axis=0)
+        elif val_triples.shape[0] == 0:
+            total_triples = np.concatenate([train_triples, test_triples], axis=0)
 
     src_total, rel_total, dst_total = total_triples.transpose()  # node ids
     # g.nodes() = len(uniq_v), uniq_v are the idx of nodes
@@ -156,37 +164,51 @@ def get_train_val_test_graph_at_t(triples, num_rels):
                                    rel_total[len(train_triples) + len(val_triples):], \
                                    dst[len(train_triples) + len(val_triples):]
 
+    src_train, dst_train = np.concatenate((src_train, dst_train)), np.concatenate((dst_train, src_train))
+    g_train.add_nodes(len(uniq_v))
+    g_train.add_edges(src_train, dst_train)
+    norm = comp_deg_norm(g_train)
+
+    rel_o = np.concatenate((rel_train + num_rels, rel_train))
+    rel_s = np.concatenate((rel_train, rel_train + num_rels))
+
+    g_train.ndata.update({'id': torch.from_numpy(uniq_v).long().view(-1, 1), 'norm': norm.view(-1, 1)})
+    g_train.edata['type_s'] = torch.LongTensor(rel_s)
+    g_train.edata['type_o'] = torch.LongTensor(rel_o)
+    g_train.ids = {}
+    idx = 0
+    for id in uniq_v:
+        g_train.ids[id] = idx
+        idx += 1
 
     for graph, cur_src, cur_rel, cur_dst in zip(
-        [g_train, g_val, g_test],
-        [src_train, src_val, src_test],
-        [rel_train, rel_val, rel_test],
-        [dst_train, dst_val, dst_test]
+        [g_test, g_val],
+        [src_test, src_val],
+        [rel_test, rel_val],
+        [dst_test, dst_val]
     ):
-        # import pdb; pdb.set_trace()
-        cur_src, cur_dst = np.concatenate((cur_src, cur_dst)), np.concatenate((cur_dst, cur_src))
         graph.add_nodes(len(uniq_v))
+        # shuffle tails
+        # rand_obj = torch.randperm(len(uniq_v))[:cur_dst.shape[0]]
+        # rand_sub = torch.randperm(len(uniq_v))[cur_dst.shape[0]:2 * cur_dst.shape[0]]
+        # shuff_dst = graph.nodes()[rand_obj]
+        # shuff_src = graph.nodes()[rand_sub]
+        # graph.add_edges(shuff_src, shuff_dst)
         graph.add_edges(cur_src, cur_dst)
-
         norm = comp_deg_norm(graph)
-
-        rel_o = np.concatenate((cur_rel + num_rels, cur_rel))
-        rel_s = np.concatenate((cur_rel, cur_rel + num_rels))
         graph.ndata.update({'id': torch.from_numpy(uniq_v).long().view(-1, 1), 'norm': norm.view(-1, 1)})
-        graph.edata['type_s'] = torch.LongTensor(rel_s)
-        graph.edata['type_o'] = torch.LongTensor(rel_o)
+        graph.edata['type_s'] = torch.LongTensor(cur_rel)
         graph.ids = {}
         idx = 0
         for id in uniq_v:
             graph.ids[id] = idx
             idx += 1
-    if type(g_train) == type(None) or type(g_val) == type(None) or type(g_test) == type(None):
-        import pdb; pdb.set_trace()
     return g_train, g_val, g_test
 
 
 def load_quadruples_interpolation(dataset_path, train_fname, valid_fname, test_fname, total_times):
     time2triples = {}
+
     for tim in total_times:
         time2triples[tim] = {"train": [], "valid": [], "test": []}
 

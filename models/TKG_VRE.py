@@ -3,11 +3,9 @@ import torch.nn.functional as F
 from models.RGCN import RGCN
 import dgl
 import numpy as np
-from utils.utils import reparametrize, move_dgl_to_cuda, filter_none
+from utils.utils import reparametrize, move_dgl_to_cuda, filter_none, comp_deg_norm
 from utils.scores import *
-from utils.evaluation import calc_metrics
-from argparse import Namespace
-from ablation.TKG_Recurrent_Module import TKG_Recurrent_Module
+from baselines.TKG_Recurrent_Module import TKG_Recurrent_Module
 
 class TKG_VAE(TKG_Recurrent_Module):
     def __init__(self, args, num_ents, num_rels, graph_dict_train, graph_dict_val, graph_dict_test):
@@ -18,10 +16,12 @@ class TKG_VAE(TKG_Recurrent_Module):
         self.use_VAE = self.args.use_VAE
 
         if self.use_VAE:
+            self.init_mean = nn.Parameter(torch.Tensor(self.num_ents, self.embed_size))
+            self.last_mean = nn.Parameter(torch.Tensor(self.num_ents, self.embed_size))
+
             self.prior = nn.Sequential(
                 nn.Linear(self.hidden_size, self.hidden_size),
                 nn.ReLU())
-
             # self.ent_prior_means = nn.Parameter(torch.zeros(self.num_ents, self.embed_size), requires_grad=False)
             # self.ent_prior_stds = nn.Parameter(torch.ones(self.num_ents, self.embed_size), requires_grad=False)
             # self.ent_prior_stds = nn.Parameter(torch.Tensor(self.num_ents, self.embed_size))
@@ -37,7 +37,6 @@ class TKG_VAE(TKG_Recurrent_Module):
 
             self.rel_prior_means = nn.Parameter(torch.zeros(self.num_rels * 2, self.embed_size), requires_grad=False)
             self.rel_prior_std = nn.Parameter(torch.ones(self.num_rels * 2, self.embed_size), requires_grad=False)
-
 
         self.rel_enc_stds = nn.Parameter(torch.Tensor(self.num_rels * 2, self.embed_size))
         nn.init.xavier_uniform_(self.rel_enc_stds, gain=nn.init.calculate_gain('relu'))
@@ -80,8 +79,26 @@ class TKG_VAE(TKG_Recurrent_Module):
                        p_std.pow(2) - 1)
         return 0.5 / q_mean.shape[0] * torch.mean(torch.sum(kld_element, 1))
 
-    def get_batch_graph(self, g_batched_list_t, cur_h, node_sizes):
-        batched_graph = dgl.batch(g_batched_list_t)
+    def get_batch_graph(self, g_batched_list_t, cur_h, node_sizes, val):
+        if val:
+            sampled_graph_list = g_batched_list_t
+        else:
+            sampled_graph_list = []
+            for g in g_batched_list_t:
+                src, rel, dst = g.edges()[0], g.edata['type_s'], g.edges()[1]
+                half_num_nodes = int(src.shape[0] / 2)
+                graph_split_ids = np.random.choice(np.arange(half_num_nodes),
+                                                   size=int(0.5 * half_num_nodes), replace=False)
+                graph_split_rev_ids = graph_split_ids + half_num_nodes
+
+                sg = g.edge_subgraph(np.concatenate((graph_split_ids, graph_split_rev_ids)), preserve_nodes=True)
+                norm = comp_deg_norm(sg)
+                sg.ndata.update({'id': g.ndata['id'], 'norm': torch.from_numpy(norm).view(-1, 1)})
+                sg.edata['type_s'] = rel[np.concatenate((graph_split_ids, graph_split_rev_ids))]
+                sg.ids = g.ids
+                sampled_graph_list.append(sg)
+
+        batched_graph = dgl.batch(sampled_graph_list)
         # sum_num_ents, bsz, hsz
         expanded_h = torch.cat(
             [cur_h[i].unsqueeze(0).expand(size, self.embed_size) for i, size in enumerate(node_sizes)], dim=0)
@@ -92,24 +109,22 @@ class TKG_VAE(TKG_Recurrent_Module):
             move_dgl_to_cuda(batched_graph)
         return batched_graph
 
-    def get_posterior_embeddings(self, g_batched_list_t, cur_h, node_sizes):
-        batched_graph = self.get_batch_graph(g_batched_list_t, cur_h, node_sizes)
+    def get_posterior_embeddings(self, g_batched_list_t, cur_h, node_sizes, val=False):
+        batched_graph = self.get_batch_graph(g_batched_list_t, cur_h, node_sizes, val)
         enc_ent_mean_graph = self.ent_enc_means(batched_graph, reverse=False)
         ent_enc_means = enc_ent_mean_graph.ndata['h']
         per_graph_ent_mean = ent_enc_means.split(node_sizes)
-        # if self.use_VAE:
-        batched_graph = self.get_batch_graph(g_batched_list_t, cur_h, node_sizes)
-        enc_ent_std_graph = self.ent_enc_stds(batched_graph, reverse=False)
-        ent_enc_stds = F.softplus(enc_ent_std_graph.ndata['h'])
-
-        # ent_enc_stds = self.ent_enc_stds(batched_graph.ndata['h'])
-        per_graph_ent_std = ent_enc_stds.split(node_sizes)
-        # else:
-        #     per_graph_ent_std = ent_enc_stds = [None] * sum(node_sizes)
+        if self.use_VAE:
+            enc_ent_std_graph = self.ent_enc_stds(batched_graph, reverse=False)
+            ent_enc_stds = F.softplus(enc_ent_std_graph.ndata['h'])
+            # ent_enc_stds = self.ent_enc_stds(batched_graph.ndata['h'])
+            per_graph_ent_std = ent_enc_stds.split(node_sizes)
+        else:
+            per_graph_ent_std = ent_enc_stds = [None] * sum(node_sizes)
         return per_graph_ent_mean, per_graph_ent_std, ent_enc_means, ent_enc_stds
 
-    def get_per_graph_ent_embeds(self, g_batched_list_t, cur_h, node_sizes):
-        batched_graph = self.get_batch_graph(g_batched_list_t, cur_h, node_sizes)
+    def get_per_graph_ent_embeds(self, g_batched_list_t, cur_h, node_sizes, val=False):
+        batched_graph = self.get_batch_graph(g_batched_list_t, cur_h, node_sizes, val)
         enc_ent_mean_graph = self.ent_enc_means(batched_graph, reverse=False)
         ent_enc_means = enc_ent_mean_graph.ndata['h']
 
@@ -152,6 +167,7 @@ class TKG_VAE(TKG_Recurrent_Module):
             bsz = len(g_batched_list_t)
             cur_h = h[-1][:bsz]  # bsz, hidden_size
             # run RGCN on graph to get encoded ent_embeddings and rel_embeddings in G_t
+
             node_sizes = [len(g.nodes()) for g in g_batched_list_t]
             triplets, neg_tail_samples, neg_head_samples, labels = self.corrupter.samples_labels_train(time_batched_list_t, g_batched_list_t)
 
@@ -161,20 +177,14 @@ class TKG_VAE(TKG_Recurrent_Module):
             pooled_fact_embeddings = []
             i = 0
             for ent_mean, ent_std in zip(per_graph_ent_mean, per_graph_ent_std):
-                # if self.use_VAE:
-                loss_tail = self.train_reparametrize_link_prediction(ent_mean, ent_std, triplets[i], neg_tail_samples[i], labels[i], corrupt_tail=True)
-                loss_head = self.train_reparametrize_link_prediction(ent_mean, ent_std, triplets[i], neg_head_samples[i], labels[i], corrupt_tail=False)
-                # else:
-                    # loss_tail = self.train_reparametrize_link_prediction(ent_mean, ent_mean.new_zeros(ent_mean.shape), triplets[i],
-                    #                                                      neg_tail_samples[i], labels[i],
-                    #                                                      corrupt_tail=True)
-                    # loss_head = self.train_reparametrize_link_prediction(ent_mean, ent_mean.new_zeros(ent_mean.shape), triplets[i],
-                    #                                                      neg_head_samples[i], labels[i],
-                    #                                                      corrupt_tail=False)
-
-
-                    # loss_tail = self.train_link_prediction(ent_mean, triplets[i], neg_tail_samples[i], labels[i], corrupt_tail=True)
-                    # loss_head = self.train_link_prediction(ent_mean, triplets[i], neg_head_samples[i], labels[i], corrupt_tail=False)
+                if self.use_VAE:
+                    loss_tail = self.train_reparametrize_link_prediction(ent_mean, ent_std, triplets[i], neg_tail_samples[i], labels[i], corrupt_tail=True)
+                    loss_head = self.train_reparametrize_link_prediction(ent_mean, ent_std, triplets[i], neg_head_samples[i], labels[i], corrupt_tail=False)
+                else:
+                    # loss_tail = self.train_reparametrize_link_prediction(ent_mean, ent_mean.new_zeros(ent_mean.shape), triplets[i], neg_tail_samples[i], labels[i], corrupt_tail=True)
+                    # loss_head = self.train_reparametrize_link_prediction(ent_mean, ent_mean.new_zeros(ent_mean.shape), triplets[i], neg_head_samples[i], labels[i], corrupt_tail=False)
+                    loss_tail = self.train_link_prediction(ent_mean, triplets[i], neg_tail_samples[i], labels[i], corrupt_tail=True)
+                    loss_head = self.train_link_prediction(ent_mean, triplets[i], neg_head_samples[i], labels[i], corrupt_tail=False)
 
                 pooled_fact_embeddings.append(self.get_pooled_facts(ent_mean, triplets[i]))
                 reconstruct_loss += loss_tail + loss_head

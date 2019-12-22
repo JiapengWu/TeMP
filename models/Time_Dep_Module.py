@@ -11,126 +11,12 @@ from utils.CorrptTriples import CorruptTriples
 import torch.nn.functional as F
 from utils.utils import filter_none
 from utils.evaluation import EvaluationFilter
+from models.TKG_Module import TKG_Module
 
 
-class TKG_Module(LightningModule):
+class Time_Dep_Module(TKG_Module):
     def __init__(self, args, num_ents, num_rels, graph_dict_train, graph_dict_val, graph_dict_test):
-        super(TKG_Module, self).__init__()
-        self.args = self.hparams = args
-        self.graph_dict_train = graph_dict_train
-        self.graph_dict_val = graph_dict_val
-        self.graph_dict_test = graph_dict_test
-        self.total_time = list(graph_dict_train.keys())
-        self.num_rels = num_rels
-        self.num_ents = num_ents
-        self.embed_size = args.embed_size
-        self.hidden_size = args.hidden_size
-        self.use_cuda = args.use_cuda
-        self.num_pos_facts = args.num_pos_facts
-        self.negative_rate = args.negative_rate
-        self.calc_score = {'distmult': distmult, 'complex': complex, 'transE': transE}[args.score_function]
-        self.build_model()
-        self.corrupter = CorruptTriples(self.args, graph_dict_train)
-        self.evaluater = EvaluationFilter(args, self.calc_score, graph_dict_train, graph_dict_val, graph_dict_test)
-
-    def training_step(self, batch_time, batch_idx):
-        reconstruct_loss, kld_loss = self.forward(batch_time)
-        loss = reconstruct_loss + kld_loss
-
-        if self.trainer.use_dp or self.trainer.use_ddp2:
-            loss = loss.unsqueeze(0)
-        tqdm_dict = {'train_loss': loss}
-        output = OrderedDict({
-            'train_reconstruction_loss': reconstruct_loss,
-            'train_KLD_loss': torch.tensor(kld_loss) if type(kld_loss) != torch.Tensor else kld_loss,
-            'loss': loss,
-            'progress_bar': tqdm_dict,
-            'log': tqdm_dict
-        })
-
-        self.logger.experiment.log(output)
-        # can also return just a scalar instead of a dict (return loss_val)
-        return output
-
-    def validation_step(self, batch_time, batch_idx):
-        """
-        Lightning calls this inside the validation loop
-        :param batch:
-        :return:
-        """
-        mrrs, hit_1s, hit_3s, hit_10s, loss = self.evaluate(batch_time)
-
-        # in DP mode (default) make sure if result is scalar, there's another dim in the beginning
-        if self.trainer.use_dp or self.trainer.use_ddp2:
-            loss = loss.unsqueeze(0)
-
-        output = OrderedDict({
-            'MRR': mrrs,
-            'Hit_1': hit_1s,
-            'Hit_3': hit_3s,
-            'Hit_10': hit_10s,
-            'val_loss': loss,
-        })
-        # print(output)
-        self.logger.experiment.log(output)
-        return output
-
-    def validation_end(self, outputs):
-        avg_hit_10 = np.mean([x['Hit_10'] for x in outputs])
-        avg_hit_3 = np.mean([x['Hit_3'] for x in outputs])
-        avg_hit_1 = np.mean([x['Hit_1'] for x in outputs])
-        avg_mrrs = np.mean([x['MRR'] for x in outputs])
-        avg_val_loss = np.mean([x['val_loss'] for x in outputs])
-        return {'avg_mrr': avg_mrrs,
-                'avg_val_loss': avg_val_loss,
-                'avg_hit_10': avg_hit_10,
-                'avg_hit_3': avg_hit_3,
-                'avg_hit_1': avg_hit_1
-                }
-
-    def test_step(self, batch_time, batch_idx):
-        mrrs, hit_1s, hit_3s, hit_10s, loss = self.evaluate(batch_time, val=False)
-
-        # in DP mode (default) make sure if result is scalar, there's another dim in the beginning
-        if self.trainer.use_dp or self.trainer.use_ddp2:
-            loss = loss.unsqueeze(0)
-
-        output = OrderedDict({
-            'MRR': mrrs,
-            'Hit_1': hit_1s,
-            'Hit_3': hit_3s,
-            'Hit_10': hit_10s,
-            'test_loss': loss
-        })
-        self.logger.experiment.log(output)
-
-        return output
-
-    def test_end(self, outputs):
-        avg_hit_10 = np.mean([x['Hit_10'] for x in outputs])
-        avg_hit_3 = np.mean([x['Hit_3'] for x in outputs])
-        avg_hit_1 = np.mean([x['Hit_1'] for x in outputs])
-        avg_mrrs = np.mean([x['MRR'] for x in outputs])
-        avg_test_loss = np.mean([x['test_loss'] for x in outputs])
-
-        test_result = {'avg_mrr': avg_mrrs,
-                'avg_test_loss': avg_test_loss,
-                'avg_hit_10': avg_hit_10,
-                'avg_hit_3': avg_hit_3,
-                'avg_hit_1': avg_hit_1
-                }
-        print()
-        print(test_result)
-        print()
-        return test_result
-
-    def configure_optimizers(self):
-        """
-        return whatever optimizers we want here
-        :return: list of optimizers
-        """
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.args.lr, weight_decay=0.0001)
-        return optimizer
+        super(Time_Dep_Module, self).__init__(args, num_ents, num_rels, graph_dict_train, graph_dict_val, graph_dict_test)
 
     def _dataloader(self, times):
         # when using multi-node (ddp) we need to add the  datasampler
