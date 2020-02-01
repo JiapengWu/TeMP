@@ -19,6 +19,14 @@ def cuda(tensor):
     else:
         return tensor
 
+
+def node_norm_to_edge_norm(g, node_norm):
+    g = g.local_var()
+    # convert to edge norm
+    g.ndata['norm'] = node_norm
+    g.apply_edges(lambda edges : {'norm' : edges.dst['norm']})
+    return g.edata['norm']
+
 '''
 # TODO: check if the sampled triples are in the KB
 def negative_sampling(triples, num_entities, negative_rate, num_pos_facts, use_gpu):

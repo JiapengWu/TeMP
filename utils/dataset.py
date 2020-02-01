@@ -1,12 +1,12 @@
 import numpy as np
 import os
-from collections import defaultdict
 import pickle
 import dgl
 from torch.utils.data import Dataset
 import torch
 from utils.args import process_args
-
+from utils.utils import node_norm_to_edge_norm, comp_deg_norm
+from collections import defaultdict
 
 def load_quadruples(dataset_path, fileName, fileName2=None, fileName3=None):
     with open(os.path.join(dataset_path, fileName), 'r') as fr:
@@ -50,13 +50,6 @@ def load_quadruples(dataset_path, fileName, fileName2=None, fileName3=None):
 def get_data_with_t(data, tim):
     triples = [[quad[0], quad[1], quad[2]] for quad in data if quad[3] == tim]
     return np.array(triples)
-
-
-def comp_deg_norm(g):
-    in_deg = g.in_degrees(range(g.number_of_nodes())).float()
-    in_deg[torch.nonzero(in_deg == 0).view(-1)] = 1
-    norm = 1.0 / in_deg
-    return norm
 
 
 def get_total_number(dataset_path, fileName="stat.txt"):
@@ -154,6 +147,7 @@ def get_train_val_test_graph_at_t(triples, num_rels):
     g_val = dgl.DGLGraph()
     g_test = dgl.DGLGraph()
 
+    # for training, add reverse tuples (o, r-1, s); not for val and test graphs
     src_train, rel_train, dst_train = src[:len(train_triples)], rel_total[:len(train_triples)], dst[:len(train_triples)]
 
     src_val, rel_val, dst_val = src[len(train_triples): len(train_triples) + len(val_triples)], \
@@ -164,28 +158,32 @@ def get_train_val_test_graph_at_t(triples, num_rels):
                                    rel_total[len(train_triples) + len(val_triples):], \
                                    dst[len(train_triples) + len(val_triples):]
 
-    src_train, dst_train = np.concatenate((src_train, dst_train)), np.concatenate((dst_train, src_train))
-    g_train.add_nodes(len(uniq_v))
-    g_train.add_edges(src_train, dst_train)
-    norm = comp_deg_norm(g_train)
+    add_reverse = False
+    if add_reverse:
+        src_train, dst_train = np.concatenate((src_train, dst_train)), np.concatenate((dst_train, src_train))
+        g_train.add_nodes(len(uniq_v))
+        g_train.add_edges(src_train, dst_train)
+        norm = comp_deg_norm(g_train)
 
-    rel_o = np.concatenate((rel_train + num_rels, rel_train))
-    rel_s = np.concatenate((rel_train, rel_train + num_rels))
+        rel_o = np.concatenate((rel_train + num_rels, rel_train))
+        rel_s = np.concatenate((rel_train, rel_train + num_rels))
 
-    g_train.ndata.update({'id': torch.from_numpy(uniq_v).long().view(-1, 1), 'norm': norm.view(-1, 1)})
-    g_train.edata['type_s'] = torch.LongTensor(rel_s)
-    g_train.edata['type_o'] = torch.LongTensor(rel_o)
-    g_train.ids = {}
-    idx = 0
-    for id in uniq_v:
-        g_train.ids[id] = idx
-        idx += 1
+        g_train.ndata.update({'id': torch.from_numpy(uniq_v).long().view(-1, 1), 'norm': norm.view(-1, 1)})
+        g_train.edata['type_s'] = torch.LongTensor(rel_s)
+        g_train.edata['type_o'] = torch.LongTensor(rel_o)
+        g_train.ids = {}
+        in_graph_idx = 0
+        for id in uniq_v:
+            g_train.ids[id] = in_graph_idx
+            in_graph_idx += 1
+
+        g_list, src_list, rel_list, dst_list = [g_test, g_val], [src_test, src_val], [rel_test, rel_val], [dst_test, dst_val]
+    else:
+        g_list, src_list, rel_list, dst_list = [g_train, g_test, g_val], [src_train, src_test, src_val], \
+                                               [rel_train, rel_test, rel_val], [dst_train, dst_test, dst_val]
 
     for graph, cur_src, cur_rel, cur_dst in zip(
-        [g_test, g_val],
-        [src_test, src_val],
-        [rel_test, rel_val],
-        [dst_test, dst_val]
+        g_list, src_list, rel_list, dst_list
     ):
         graph.add_nodes(len(uniq_v))
         # shuffle tails
@@ -195,14 +193,17 @@ def get_train_val_test_graph_at_t(triples, num_rels):
         # shuff_src = graph.nodes()[rand_sub]
         # graph.add_edges(shuff_src, shuff_dst)
         graph.add_edges(cur_src, cur_dst)
-        norm = comp_deg_norm(graph)
-        graph.ndata.update({'id': torch.from_numpy(uniq_v).long().view(-1, 1), 'norm': norm.view(-1, 1)})
+        node_norm = comp_deg_norm(graph)
+        graph.ndata.update({'id': torch.from_numpy(uniq_v).long().view(-1, 1), 'norm': torch.from_numpy(node_norm).view(-1, 1)})
+        # import pdb; pdb.set_trace()
+        graph.edata['norm'] = node_norm_to_edge_norm(graph, torch.from_numpy(node_norm).view(-1, 1))
         graph.edata['type_s'] = torch.LongTensor(cur_rel)
         graph.ids = {}
-        idx = 0
+        in_graph_idx = 0
+        # graph.ids: node id in the entire node set -> node index
         for id in uniq_v:
-            graph.ids[id] = idx
-            idx += 1
+            graph.ids[in_graph_idx] = id
+            in_graph_idx += 1
     return g_train, g_val, g_test
 
 
@@ -224,17 +225,33 @@ def load_quadruples_interpolation(dataset_path, train_fname, valid_fname, test_f
 
     return time2triples
 
+def get_per_entity_time_sequence(time2triples):
+    interaction_time_sequence = defaultdict(set)
+    for tim, triple_dict in time2triples.items():
+        for h, r, t in triple_dict['train']:
+            interaction_time_sequence[h].add(tim)
+            interaction_time_sequence[t].add(tim)
+
+    for k in interaction_time_sequence.keys():
+        interaction_time_sequence[k] = sorted(list(interaction_time_sequence[k]))
+
+    # import pdb; pdb.set_trace()
+    return interaction_time_sequence
+
 
 def build_interpolation_graphs(args):
     train_graph_dict_path = os.path.join(args.dataset, 'train_graphs.txt')
     dev_graph_dict_path = os.path.join(args.dataset, 'dev_graphs.txt')
     test_graph_dict_path = os.path.join(args.dataset, 'test_graphs.txt')
+    # time_sequence = os.path.join(args.dataset, 'interaction_time_sequence.txt')
 
     if not os.path.isfile(train_graph_dict_path) or not os.path.isfile(dev_graph_dict_path) or not os.path.isfile(test_graph_dict_path):
 
         total_data, total_times = load_quadruples(args.dataset, 'train.txt', 'valid.txt', 'test.txt')
         time2triples = load_quadruples_interpolation(args.dataset, 'train.txt', 'valid.txt', 'test.txt', total_times)
         num_e, num_r = get_total_number(args.dataset, 'stat.txt')
+
+        # interaction_time_sequence = get_per_entity_time_sequence(time2triples)
 
         graph_dict_train = {}
         graph_dict_dev = {}
@@ -246,6 +263,7 @@ def build_interpolation_graphs(args):
             graph_dict_train[tim] = g_train
             graph_dict_dev[tim] = g_val
             graph_dict_test[tim] = g_test
+
 
         for graph_dict, path in zip(
             [graph_dict_train, graph_dict_dev, graph_dict_test],
@@ -260,6 +278,8 @@ def build_interpolation_graphs(args):
             with open(path, 'rb') as f:
                 graph_dicts.append(pickle.load(f))
         graph_dict_train, graph_dict_dev, graph_dict_test = graph_dicts
+        # with open(time_sequence, 'rb') as f:
+        #     interaction_time_sequence = pickle.load(f)
     return graph_dict_train, graph_dict_dev, graph_dict_test
 
 

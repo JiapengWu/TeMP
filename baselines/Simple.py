@@ -124,7 +124,7 @@ class SimplE(TKG_Non_Recurrent):
         reconstruct_loss = 0
         g_list = [self.graph_dict_train[i.item()] for i in t_list]
         per_graph_ent_embeds, per_graph_ent_embeds_inv = self.get_per_graph_ent_embeds(g_list)
-        triplets, neg_tail_samples, neg_head_samples, labels = self.corrupter.samples_labels_train(t_list, g_list)
+        triplets, neg_tail_samples, neg_head_samples, labels = self.corrupter.single_graph_negative_sampling(t_list, g_list)
 
         i = 0
         for ent_embed, ent_embed_inv in zip(per_graph_ent_embeds, per_graph_ent_embeds_inv):

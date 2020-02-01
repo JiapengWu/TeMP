@@ -16,21 +16,17 @@ class TKG_Non_Recurrent(TKG_Module):
     def evaluate(self, t_list, val=True):
         graph_dict = self.graph_dict_val if val else self.graph_dict_test
         g_list = [graph_dict[i.item()] for i in t_list]
-        per_graph_ent_embeds = self.get_per_graph_ent_embeds(t_list, g_list)
-        triplets, labels = self.corrupter.sample_labels_val(g_list)
-        return self.calc_metrics(per_graph_ent_embeds, t_list, triplets, labels)
+        return self.calc_metrics(g_list, t_list)
 
-    def forward(self, t_list, reverse=False):
-        kld_loss = 0
+    def forward(self, t_list):
         reconstruct_loss = 0
         g_list = [self.graph_dict_train[i.item()] for i in t_list]
 
-        per_graph_ent_embeds = self.get_per_graph_ent_embeds(t_list, g_list)
-
-        triplets, neg_tail_samples, neg_head_samples, labels = self.corrupter.samples_labels_train(t_list, g_list)
-
-        for i, ent_embed in enumerate(per_graph_ent_embeds):
-            loss_tail = self.train_link_prediction(ent_embed, triplets[i], neg_tail_samples[i], labels[i], corrupt_tail=True)
-            loss_head = self.train_link_prediction(ent_embed, triplets[i], neg_head_samples[i], labels[i], corrupt_tail=False)
+        for t, g in zip(t_list, g_list):
+            ent_embed = self.get_per_graph_ent_embeds(t, g)
+            all_embeds_g = self.get_all_embeds_Gt(t)
+            triplets, neg_tail_samples, neg_head_samples, labels = self.corrupter.single_graph_negative_sampling(t, g, self.num_ents)
+            loss_tail = self.train_link_prediction(ent_embed, triplets, neg_tail_samples, labels, all_embeds_g, corrupt_tail=True)
+            loss_head = self.train_link_prediction(ent_embed, triplets, neg_head_samples, labels, all_embeds_g, corrupt_tail=False)
             reconstruct_loss += loss_tail + loss_head
-        return reconstruct_loss, kld_loss
+        return reconstruct_loss

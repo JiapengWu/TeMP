@@ -22,34 +22,22 @@ class CorruptTriples:
             self.true_heads_train[t] = true_head
             self.true_tails_train[t] = true_tail
 
-    def samples_labels_train(self, t_list, g_batched_list):
-        samples = []
-        neg_tail_samples = []
-        neg_head_samples = []
-        labels = []
-        for t, g in zip(t_list, g_batched_list):
-            sample, neg_tail_sample, neg_head_sample, label = self.single_graph_negative_sampling(t, g)
-            samples.append(sample)
-            neg_tail_samples.append(neg_tail_sample)
-            neg_head_samples.append(neg_head_sample)
-            labels.append(label)
-        return samples, neg_tail_samples, neg_head_samples, labels
-
-    def single_graph_negative_sampling(self, t, g):
+    # TODO: fix negative sampling to include all the nodes
+    def single_graph_negative_sampling(self, t, g, num_ents):
         t = t.item()
         triples = torch.stack([g.edges()[0], g.edata['type_s'], g.edges()[1]]).transpose(0, 1)
-        sample, neg_tail_sample, neg_head_sample, label = self.negative_sampling(self.true_heads_train[t], self.true_tails_train[t], triples, len(g.nodes()))
+        sample, neg_tail_sample, neg_head_sample, label = self.negative_sampling(self.true_heads_train[t], self.true_tails_train[t], triples, num_ents, g)
+
         neg_tail_sample, neg_head_sample, label = torch.from_numpy(neg_tail_sample), torch.from_numpy(neg_head_sample), torch.from_numpy(label)
         if self.use_cuda:
             sample, neg_tail_sample, neg_head_sample, label = cuda(sample), cuda(neg_tail_sample), cuda(neg_head_sample), cuda(label)
         return sample, neg_tail_sample, neg_head_sample, label
 
-    def negative_sampling(self, true_head, true_tail, triples, num_entities):
+    def negative_sampling(self, true_head, true_tail, triples, num_entities, g):
         size_of_batch = min(triples.shape[0], self.num_pos_facts)
         if self.num_pos_facts < triples.shape[0]:
             rand_idx = torch.randperm(triples.shape[0])
             triples = triples[rand_idx[:self.num_pos_facts]]
-        # pdb.set_trace()
         neg_tail_samples = np.zeros((size_of_batch, 1 + self.negative_rate), dtype=int)
         neg_head_samples = np.zeros((size_of_batch, 1 + self.negative_rate), dtype=int)
         neg_tail_samples[:, 0] = triples[:, 2]
@@ -60,44 +48,34 @@ class CorruptTriples:
         for i in range(size_of_batch):
             h, r, t = triples[i]
             h, r, t = h.item(), r.item(), t.item()
-            tail_samples = self.corrupt_triple(h, r, t, true_head, true_tail, num_entities, True)
-            head_samples = self.corrupt_triple(h, r, t, true_head, true_tail, num_entities, False)
+            tail_samples = self.corrupt_triple(h, r, t, true_head, true_tail, num_entities, g, True)
+            head_samples = self.corrupt_triple(h, r, t, true_head, true_tail, num_entities, g, False)
 
+            neg_tail_samples[i][0] = g.ids[triples[i][2].item()]
+            neg_head_samples[i][0] = g.ids[triples[i][0].item()]
             neg_tail_samples[i, 1:] = tail_samples
             neg_head_samples[i, 1:] = head_samples
 
         return triples, neg_tail_samples, neg_head_samples, labels
 
-    def sample_labels_val(self, g_batched_list):
-        samples = []
-        labels = []
-        for g in g_batched_list:
-            sample = torch.stack([g.edges()[0], g.edata['type_s'], g.edges()[1]]).transpose(0, 1)
-            label = torch.ones(sample.shape[0])
-            if self.use_cuda:
-                sample = cuda(sample)
-                label = cuda(label)
-            samples.append(sample)
-            labels.append(label)
-        return samples, labels
-
-    def corrupt_triple(self, h, r, t, true_head, true_tail, num_entities, tail=True):
+    def corrupt_triple(self, h, r, t, true_head, true_tail, num_entities, g, tail=True):
         negative_sample_list = []
         negative_sample_size = 0
 
         while negative_sample_size < self.negative_rate:
             negative_sample = np.random.randint(num_entities, size=self.negative_rate)
+
             if tail:
                 mask = np.in1d(
                     negative_sample,
-                    true_tail[(h, r)],
+                    [g.ids[i.item()] for i in true_tail[(h, r)]],
                     assume_unique=True,
                     invert=True
                 )
             else:
                 mask = np.in1d(
                     negative_sample,
-                    true_head[(r, t)],
+                    [g.ids[i.item()] for i in true_head[(r, t)]],
                     assume_unique=True,
                     invert=True
                 )

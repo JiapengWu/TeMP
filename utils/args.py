@@ -33,9 +33,14 @@ def get_args():
 
     parser.add_argument('--use-amp', action='store_true')
     parser.add_argument('--log-gpu-memory', action='store_true')
-    parser.add_argument('--use-VAE', action='store_true', help='true if not using VAE')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--use-rgcn', action='store_true')
+    parser.add_argument('--self-loop', action='store_true')
+    parser.add_argument('--rec-only-last-layer', action='store_true')
+
+    parser.add_argument("--inv-temperature", type=float, default=0.5)
+
+
     parser.add_argument('--config', '-c', type=str, default=None, help='JSON file with argument for the run.')
     parser.add_argument("--checkpoint-path", type=str, default=None)
 

@@ -15,22 +15,16 @@ class Hyte(TKG_Non_Recurrent):
         self.time_embeddings = nn.Parameter(torch.Tensor(len(self.graph_dict_train.keys()), self.embed_size))
         nn.init.xavier_uniform_(self.time_embeddings, gain=nn.init.calculate_gain('relu'))
 
-    def get_per_graph_embeds(self, t_list, g_list):
-        per_graph_ent_embeds = []
-        per_graph_rel_embeds = []
-        for t, g in zip(t_list, g_list):
+    def get_per_graph_embeds(self, t, g):
             # n_ent, embed_size
-            static_ent_embeds = self.ent_embeds[g.ndata['id']].view(-1, self.embed_size)
-            # 1, embed_size
-            time_embeddings = self.time_embeddings[t].unsqueeze(0)
-            normalized_embedding = time_embeddings / torch.norm(time_embeddings, p=2, dim=-1)
-            # n_ent, embed_size - (1, embed_size * n_ent, 1)
-            projected_ent_embed = static_ent_embeds - normalized_embedding * (torch.sum(static_ent_embeds * normalized_embedding, dim=-1)).unsqueeze(1)
-            projected_rel_embed = self.rel_embeds - normalized_embedding * (torch.sum(self.rel_embeds * normalized_embedding, dim=-1)).unsqueeze(1)
-
-            per_graph_ent_embeds.append(projected_ent_embed)
-            per_graph_rel_embeds.append(projected_rel_embed)
-        return per_graph_ent_embeds, per_graph_rel_embeds
+        static_ent_embeds = self.ent_embeds[g.ndata['id']].view(-1, self.embed_size)
+        # 1, embed_size
+        time_embeddings = self.time_embeddings[t].unsqueeze(0)
+        normalized_embedding = time_embeddings / torch.norm(time_embeddings, p=2, dim=-1)
+        # n_ent, embed_size - (1, embed_size * n_ent, 1)
+        projected_ent_embed = static_ent_embeds - normalized_embedding * (torch.sum(static_ent_embeds * normalized_embedding, dim=-1)).unsqueeze(1)
+        projected_rel_embed = self.rel_embeds - normalized_embedding * (torch.sum(self.rel_embeds * normalized_embedding, dim=-1)).unsqueeze(1)
+        return projected_ent_embed, projected_rel_embed
 
     def train_link_prediction(self, ent_embed, rel_embed, triplets, neg_samples, labels, corrupt_tail=True):
         r = rel_embed[triplets[:, 1]]
@@ -69,16 +63,14 @@ class Hyte(TKG_Non_Recurrent):
         return self.calc_metrics(per_graph_ent_embeds, per_graph_rel_embeds, t_list, triplets, labels)
 
     def forward(self, t_list, reverse=False):
-        kld_loss = 0
         reconstruct_loss = 0
         g_list = [self.graph_dict_train[i.item()] for i in t_list]
-        per_graph_ent_embeds, per_graph_rel_embeds = self.get_per_graph_embeds(t_list, g_list)
-        triplets, neg_tail_samples, neg_head_samples, labels = self.corrupter.samples_labels_train(t_list, g_list)
 
-        i = 0
-        for ent_embed, rel_embed in zip(per_graph_ent_embeds, per_graph_rel_embeds):
-            loss_tail = self.train_link_prediction(ent_embed, rel_embed, triplets[i], neg_tail_samples[i], labels[i], corrupt_tail=True)
-            loss_head = self.train_link_prediction(ent_embed, rel_embed, triplets[i], neg_head_samples[i], labels[i], corrupt_tail=False)
+        for t, g in zip(t_list, g_list):
+            ent_embed, rel_embed = self.get_per_graph_ent_embeds(t, g)
+            triplets, neg_tail_samples, neg_head_samples, labels = self.corrupter.single_graph_negative_sampling(t, g)
+            loss_tail = self.train_link_prediction(ent_embed, rel_embed, triplets, neg_tail_samples, labels, corrupt_tail=True)
+            loss_head = self.train_link_prediction(ent_embed, rel_embed, triplets, neg_head_samples, labels, corrupt_tail=False)
             reconstruct_loss += loss_tail + loss_head
-            i += 1
-        return reconstruct_loss, kld_loss
+
+        return reconstruct_loss

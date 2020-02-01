@@ -11,7 +11,6 @@ from utils.CorrptTriples import CorruptTriples
 import torch.nn.functional as F
 from utils.utils import filter_none
 from utils.evaluation import EvaluationFilter
-from utils.utils import cuda
 
 
 class TKG_Module(LightningModule):
@@ -35,12 +34,15 @@ class TKG_Module(LightningModule):
         self.evaluater = EvaluationFilter(args, self.calc_score, graph_dict_train, graph_dict_val, graph_dict_test)
 
     def training_step(self, batch_time, batch_idx):
-        loss = self.forward(batch_time)
+        reconstruct_loss, kld_loss = self.forward(batch_time)
+        loss = reconstruct_loss + kld_loss
 
         if self.trainer.use_dp or self.trainer.use_ddp2:
             loss = loss.unsqueeze(0)
         tqdm_dict = {'train_loss': loss}
         output = OrderedDict({
+            'train_reconstruction_loss': reconstruct_loss,
+            'train_KLD_loss': torch.tensor(kld_loss) if type(kld_loss) != torch.Tensor else kld_loss,
             'loss': loss,
             'progress_bar': tqdm_dict,
             'log': tqdm_dict
@@ -116,7 +118,7 @@ class TKG_Module(LightningModule):
                         'hit_3': hit_3,
                         'hit_1': hit_1
                         }
-
+        print()
         print(test_result)
         print()
         return test_result
@@ -167,18 +169,17 @@ class TKG_Module(LightningModule):
     def test_dataloader(self):
         return self._dataloader(self.total_time)
 
-    # TODO: fix training so that all nodes including isolated ones are considered in the evaluation
-    def train_link_prediction(self, ent_embed, triplets, neg_samples, labels, all_embeds_g, corrupt_tail=True):
+    def train_link_prediction(self, ent_embed, triplets, neg_samples, labels, corrupt_tail=True):
         r = self.rel_embeds[triplets[:, 1]]
-
         if corrupt_tail:
             s = ent_embed[triplets[:, 0]]
-            neg_o = all_embeds_g[neg_samples]
+            neg_o = ent_embed[neg_samples]
             score = self.calc_score(s, r, neg_o, mode='tail')
         else:
-            neg_s = all_embeds_g[neg_samples]
+            neg_s = ent_embed[neg_samples]
             o = ent_embed[triplets[:, 2]]
             score = self.calc_score(neg_s, r, o, mode='head')
+        # pdb.set_trace()
         predict_loss = F.cross_entropy(score, labels)
         return predict_loss
 
@@ -199,42 +200,43 @@ class TKG_Module(LightningModule):
         pos_facts = torch.cat([s, r, o], dim=1)
         return torch.max(pos_facts, dim=0)[0]
 
+    def get_val_vars(self, g_batched_list, t, h):
+        g_batched_list_t = filter_none(g_batched_list[t])
+        bsz = len(g_batched_list_t)
+        triplets, labels = self.corrupter.sample_labels_val(g_batched_list_t)
+        cur_h = h[-1][:bsz]  # bsz, hidden_size
+        # run RGCN on graph to get encoded ent_embeddings and rel_embeddings in G_t
+        node_sizes = [len(g.nodes()) for g in g_batched_list_t]
+        return g_batched_list_t, bsz, cur_h, triplets, labels, node_sizes
+
     def get_batch_graph_list(self, t_list, seq_len, graph_dict):
         times = list(graph_dict.keys())
         time_unit = times[1] - times[0]  # compute time unit
         time_list = []
+        len_non_zero = []
 
         t_list = t_list.sort(descending=True)[0]
         g_list = []
         for tim in t_list:
             length = int(tim / time_unit) + 1
-            # cur_seq_len = seq_len if seq_len <= length else length
+            cur_seq_len = seq_len if seq_len <= length else length
             time_seq = times[length - seq_len:length] if seq_len <= length else times[:length]
-            time_list.append(([None] * (seq_len - len(time_seq))) + time_seq)
-            g_list.append(([None] * (seq_len - len(time_seq))) + [graph_dict[t] for t in time_seq])
+            time_list.append(time_seq + ([None] * (seq_len - len(time_seq))))
+            len_non_zero.append(cur_seq_len)
+            g_list.append([graph_dict[t] for t in time_seq] + ([None] * (seq_len - len(time_seq))))
 
         t_batched_list = [list(x) for x in zip(*time_list)]
         g_batched_list = [list(x) for x in zip(*g_list)]
         return g_batched_list, t_batched_list
 
-    # TODO: fix eval so that all nodes including isolated ones are considered in the evaluation
-    def calc_metrics(self, g_list, t_list):
+    def calc_metrics(self, per_graph_ent_embeds, t_list, samples, labels):
+
         mrrs, hit_1s, hit_3s, hit_10s, losses = [], [], [], [], []
         ranks = []
-        for g, t in zip(g_list, t_list):
-
-            ent_embed = self.get_per_graph_ent_embeds(t, g)
-            all_embeds_g = self.get_all_embeds_Gt(t)
-            index_sample = torch.stack([g.edges()[0], g.edata['type_s'], g.edges()[1]]).transpose(0, 1)
-            label = torch.ones(index_sample.shape[0])
-            if self.use_cuda:
-                index_sample = cuda(index_sample)
-                label = cuda(label)
-
-            if index_sample.shape[0] == 0: continue
-
-            rank = self.evaluater.calc_metrics_single_graph(ent_embed, self.rel_embeds, all_embeds_g, index_sample, g, t)
-            loss = self.link_classification_loss(ent_embed, self.rel_embeds, index_sample, label)
+        for i, ent_embed in enumerate(per_graph_ent_embeds):
+            if samples[i].shape[0] == 0: continue
+            rank = self.evaluater.calc_metrics_single_graph(ent_embed, self.rel_embeds, samples[i], t_list[i])
+            loss = self.link_classification_loss(ent_embed, self.rel_embeds, samples[i], labels[i])
             ranks.append(rank)
             losses.append(loss.item())
         ranks = torch.cat(ranks)

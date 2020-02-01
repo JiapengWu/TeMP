@@ -4,19 +4,24 @@ import torch.nn.functional as F
 import dgl.function as fn
 
 
-class RGCNLayer(nn.Module):
-    def __init__(self, in_feat, out_feat, bias=None, activation=None,
+class DRGCNLayer(nn.Module):
+    def __init__(self, args, in_feat, out_feat, bias=None, activation=None,
                  self_loop=True, dropout=0.0):
-        super(RGCNLayer, self).__init__()
+        super(DRGCNLayer, self).__init__()
         self.bias = bias
         self.activation = activation
         self.self_loop = self_loop
+        # self.temperature = nn.Parameter(torch.tensor(2.0))
+        self.inv_temperature = args.inv_temperature
 
         if self.bias == True:
             self.bias = nn.Parameter(torch.Tensor(out_feat))
             nn.init.xavier_uniform_(self.bias,
                                     gain=nn.init.calculate_gain('relu'))
 
+        self.time_weight = nn.Parameter(torch.Tensor(in_feat, out_feat))
+        nn.init.xavier_uniform_(self.time_weight,
+                                gain=nn.init.calculate_gain('relu'))
         # weight for self loop
         if self.self_loop:
             self.loop_weight = nn.Parameter(torch.Tensor(in_feat, out_feat))
@@ -32,17 +37,20 @@ class RGCNLayer(nn.Module):
     def propagate(self, g):
         raise NotImplementedError
 
-    def forward(self, g):
+    def forward(self, g, prev_graph_embeds, time_diff_tensor):
+        # for g in g_list:
         g = g.local_var()
         if self.self_loop:
             loop_message = torch.mm(g.ndata['h'], self.loop_weight)
             if self.dropout is not None:
                 loop_message = self.dropout(loop_message)
-        # import pdb; pdb.set_trace()
-        self.propagate(g)
 
+        self.propagate(g)
         # apply bias and activation
         node_repr = g.ndata['h']
+
+        node_repr = node_repr + torch.mm(prev_graph_embeds, self.time_weight) * torch.exp(-time_diff_tensor * self.inv_temperature)
+
         if self.bias:
             node_repr = node_repr + self.bias
         if self.self_loop:
@@ -53,7 +61,9 @@ class RGCNLayer(nn.Module):
         g.ndata['h'] = node_repr
         return g
 
-    def forward_isolated(self, ent_embeds):
+    def forward_isolated(self, ent_embeds, prev_graph_embeds, time_diff_tensor):
+        # import pdb; pdb.set_trace()
+        ent_embeds = ent_embeds + torch.mm(prev_graph_embeds, self.time_weight) * torch.exp(-time_diff_tensor * self.inv_temperature)
         if self.self_loop:
             loop_message = torch.mm(ent_embeds, self.loop_weight)
             if self.dropout is not None:
@@ -66,12 +76,12 @@ class RGCNLayer(nn.Module):
         return ent_embeds
 
 
-class RGCNBlockLayer(RGCNLayer):
-    def __init__(self, in_feat, out_feat, num_rels, num_bases, bias=None,
+class DRGCNBlockLayer(DRGCNLayer):
+    def __init__(self, args, in_feat, out_feat, num_rels, num_bases, bias=None,
                  activation=None, self_loop=False, dropout=0.0):
-        super(RGCNBlockLayer, self).__init__(in_feat, out_feat, bias,
-                                             activation, self_loop=self_loop,
-                                             dropout=dropout)
+        super(DRGCNBlockLayer, self).__init__(args, in_feat, out_feat, bias,
+                                              activation, self_loop=self_loop,
+                                              dropout=dropout)
         self.num_rels = num_rels
         self.num_bases = num_bases
         assert self.num_bases > 0
@@ -100,19 +110,20 @@ class RGCNBlockLayer(RGCNLayer):
         return {'h': nodes.data['h'] * nodes.data['norm']}
 
 
-class RGCN(nn.Module):
+class DRGCN(nn.Module):
+    # TODO: generalize to n layers
     def __init__(self, args, hidden_size, embed_size, num_rels, static=False):
-        super(RGCN, self).__init__()
+        super(DRGCN, self).__init__()
         # in_feat = embed_size if static else hidden_size + embed_size
-        self.layer_1 = RGCNBlockLayer(embed_size, hidden_size, 2 * num_rels, args.n_bases,
-                   activation=None, self_loop=True, dropout=args.dropout)
-        self.layer_2 = RGCNBlockLayer(hidden_size, hidden_size, 2 * num_rels, args.n_bases,
-                   activation=F.relu, self_loop=True, dropout=args.dropout)
+        self.layer_1 = DRGCNBlockLayer(args, embed_size, hidden_size, 2 * num_rels, args.n_bases,
+                                       activation=None, self_loop=True, dropout=args.dropout)
+        self.layer_2 = DRGCNBlockLayer(args, hidden_size, hidden_size, 2 * num_rels, args.n_bases,
+                                       activation=F.relu, self_loop=True, dropout=args.dropout)
 
-    def forward(self, batched_graph):
-        batched_graph = self.layer_1(batched_graph)
-        return self.layer_2(batched_graph)
+    def forward(self, batched_graph, first_prev_graph_embeds, second_prev_graph_embeds, time_diff_tensor):
+        batched_graph = self.layer_1(batched_graph, first_prev_graph_embeds, time_diff_tensor)
+        return batched_graph, self.layer_2(batched_graph, second_prev_graph_embeds, time_diff_tensor)
 
-    def forward_isolated(self, ent_embeds):
-        return self.layer_2.forward_isolated(self.layer_1.forward_isolated(ent_embeds))
-
+    def forward_isolated(self, ent_embeds, first_prev_graph_embeds, second_prev_graph_embeds, time_diff_tensor):
+        ent_embeds = self.layer_1.forward_isolated(ent_embeds, first_prev_graph_embeds, time_diff_tensor)
+        return self.layer_2.forward_isolated(ent_embeds, second_prev_graph_embeds, time_diff_tensor)
