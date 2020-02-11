@@ -2,37 +2,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import dgl.function as fn
+from models.RGCN import RGCNLayer
 
-
-class DRGCNLayer(nn.Module):
+class DRGCNLayer(RGCNLayer):
     def __init__(self, args, in_feat, out_feat, bias=None, activation=None,
                  self_loop=True, dropout=0.0):
-        super(DRGCNLayer, self).__init__()
-        self.bias = bias
-        self.activation = activation
-        self.self_loop = self_loop
-        # self.temperature = nn.Parameter(torch.tensor(2.0))
+        super(DRGCNLayer, self).__init__(in_feat, out_feat, bias, activation, self_loop, dropout)
         self.inv_temperature = args.inv_temperature
-
-        if self.bias == True:
-            self.bias = nn.Parameter(torch.Tensor(out_feat))
-            nn.init.xavier_uniform_(self.bias,
-                                    gain=nn.init.calculate_gain('relu'))
 
         self.time_weight = nn.Parameter(torch.Tensor(in_feat, out_feat))
         nn.init.xavier_uniform_(self.time_weight,
                                 gain=nn.init.calculate_gain('relu'))
-        # weight for self loop
-        if self.self_loop:
-            self.loop_weight = nn.Parameter(torch.Tensor(in_feat, out_feat))
-            nn.init.xavier_uniform_(self.loop_weight,
-                                    gain=nn.init.calculate_gain('relu'))
-
-        if dropout:
-            self.dropout = nn.Dropout(dropout)
-        else:
-            self.dropout = None
-
     # define how propagation is done in subclass
     def propagate(self, g):
         raise NotImplementedError
@@ -62,7 +42,6 @@ class DRGCNLayer(nn.Module):
         return g
 
     def forward_isolated(self, ent_embeds, prev_graph_embeds, time_diff_tensor):
-        # import pdb; pdb.set_trace()
         ent_embeds = ent_embeds + torch.mm(prev_graph_embeds, self.time_weight) * torch.exp(-time_diff_tensor * self.inv_temperature)
         if self.self_loop:
             loop_message = torch.mm(ent_embeds, self.loop_weight)

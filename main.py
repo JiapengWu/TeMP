@@ -1,14 +1,13 @@
 # from comet_ml import Experiment, ExistingExperiment
 from utils.dataset import *
 from utils.args import process_args
-from models.TKG_VRE import TKG_VAE
+from previous.TKG_VRE import TKG_VAE
 from baselines.Static import Static
 from baselines.Simple import SimplE
 from baselines.Hyte import Hyte
 from baselines.DiachronicEmbedding import DiachronicEmbedding
 from baselines.StaticRGCN import StaticRGCN
-from baselines.RecurrentRGCN import RecurrentRGCN
-from baselines.DRGCN import DRGCN
+from models.DynamicRGCN import DynamicRGCN
 import time
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import EarlyStopping
@@ -26,15 +25,12 @@ if __name__ == '__main__':
         args.__dict__.update(dict(args_json))
 
     use_cuda = args.use_cuda = args.n_gpu >= 0 and torch.cuda.is_available()
-    # args.n_gpu = torch.cuda.device_count()
     num_ents, num_rels = get_total_number(args.dataset, 'stat.txt')
 
     if args.dataset_dir == 'extrapolation':
         graph_dict_train, graph_dict_val, graph_dict_test = build_extrapolation_time_stamp_graph(args)
     elif args.dataset_dir == 'interpolation':
         graph_dict_train, graph_dict_val, graph_dict_test = build_interpolation_graphs(args)
-
-    # graph_dict_total = {**graph_dict_train, **graph_dict_dev, **graph_dict_test}
 
     module = {
               'VKGRNN': TKG_VAE,
@@ -43,14 +39,14 @@ if __name__ == '__main__':
               "DE": DiachronicEmbedding,
               "Hyte": Hyte,
               "SRGCN": StaticRGCN,
-              "RRGCN": RecurrentRGCN,
-              "DRGCN": DRGCN
+              "RRGCN": DynamicRGCN,
+              "DRGCN": DynamicRGCN
               }[args.module]
 
     model = module(args, num_ents, num_rels, graph_dict_train, graph_dict_val, graph_dict_test)
 
     early_stop_callback = EarlyStopping(
-        monitor='avg_mrr',
+        monitor='mrr',
         min_delta=0.00,
         patience=args.patience,
         verbose=False,
@@ -70,7 +66,7 @@ if __name__ == '__main__':
         filepath=checkpoint_path,
         save_best_only=True,
         verbose=True,
-        monitor='avg_mrr',
+        monitor='mrr',
         mode='max',
         prefix=''
     )
@@ -85,11 +81,10 @@ if __name__ == '__main__':
                       max_nb_epochs=args.max_nb_epochs,
                       # fast_dev_run=args.debug,
                       distributed_backend=args.distributed_backend,
-                      nb_sanity_val_steps=1 if args.debug else 5,
+                      nb_sanity_val_steps=1 if args.debug else 1,
                       early_stop_callback=early_stop_callback,
                       train_percent_check=0.1 if args.debug else 1.0,
                       checkpoint_callback=checkpoint_callback
-                      # print_nan_grads=True
                       )
 
     trainer.fit(model)

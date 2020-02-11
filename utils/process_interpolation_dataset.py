@@ -6,7 +6,7 @@ import re
 
 def get_args():
     parser = argparse.ArgumentParser(description='TKG-VAE')
-    parser.add_argument("--dataset-dir", '-d', type=str, default='extrapolation')
+    parser.add_argument("--dataset-dir", '-d', type=str, default='wiki_data')
     return parser.parse_args()
 
 
@@ -20,7 +20,6 @@ def create_ent_rel_to_idx():
     for data_split, triple_lst in zip(['train', 'valid', 'test'], [train_triples, valid_triples, test_triples]):
         with open(os.path.join(input_dir, "{}.txt".format(data_split)), "r") as f:
             for line in f:
-
                 line_split = line.strip().split('\t')
                 head = line_split[0]
                 tail = line_split[2]

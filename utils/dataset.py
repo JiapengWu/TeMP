@@ -8,6 +8,7 @@ from utils.args import process_args
 from utils.utils import node_norm_to_edge_norm, comp_deg_norm
 from collections import defaultdict
 
+
 def load_quadruples(dataset_path, fileName, fileName2=None, fileName3=None):
     with open(os.path.join(dataset_path, fileName), 'r') as fr:
         quadrupleList = []
@@ -60,28 +61,52 @@ def get_total_number(dataset_path, fileName="stat.txt"):
 
 
 def get_big_graph(data, num_rels):
-    src, rel, dst = data.transpose() # node ids
-    # uniq_v: range from 0 to the number of nodes acting as g.nodes();
-    # edges: uniq_v[edges] = np.unique((src, dst)), mapping from (o, len(nodes)) to the original node idx
-    uniq_v, edges = np.unique((src, dst), return_inverse=True)
 
-    src, dst = np.reshape(edges, (2, -1))
-    g = dgl.DGLGraph()
-    g.add_nodes(len(uniq_v))
-    src, dst = np.concatenate((src, dst)), np.concatenate((dst, src))
+    add_reverse = True
+    if add_reverse:
 
-    rel_o = np.concatenate((rel + num_rels, rel))
-    rel_s = np.concatenate((rel, rel + num_rels))
-    g.add_edges(src, dst)
-    norm = comp_deg_norm(g)
-    g.ndata.update({'id': torch.from_numpy(uniq_v).long().view(-1, 1), 'norm': norm.view(-1, 1)})
-    g.edata['type_s'] = torch.LongTensor(rel_s)
-    g.edata['type_o'] = torch.LongTensor(rel_o)
-    g.ids = {}
-    idx = 0
-    for id in uniq_v:
-        g.ids[id] = idx
-        idx += 1
+        src, rel, dst = data.transpose() # node ids
+        # uniq_v: range from 0 to the number of nodes acting as g.nodes();
+        # edges: uniq_v[edges] = np.unique((src, dst)), mapping from (o, len(nodes)) to the original node idx
+        uniq_v, edges = np.unique((src, dst), return_inverse=True)
+
+        src, dst = np.reshape(edges, (2, -1))
+        g = dgl.DGLGraph()
+        g.add_nodes(len(uniq_v))
+        src, dst = np.concatenate((src, dst)), np.concatenate((dst, src))
+
+        rel_o = np.concatenate((rel + num_rels, rel))
+        rel_s = np.concatenate((rel, rel + num_rels))
+        g.add_edges(src, dst)
+        norm = comp_deg_norm(g)
+        # import pdb; pdb.set_trace()
+        g.ndata.update({'id': torch.from_numpy(uniq_v).long().view(-1, 1), 'norm': torch.from_numpy(norm).view(-1, 1)})
+        g.edata['type_s'] = torch.LongTensor(rel_s)
+        g.edata['type_o'] = torch.LongTensor(rel_o)
+        g.ids = {}
+        in_graph_idx = 0
+        # graph.ids: node id in the entire node set -> node index
+        for id in uniq_v:
+            g.ids[in_graph_idx] = id
+            in_graph_idx += 1
+    else:
+        src, rel, dst = data.transpose() # node ids
+        # uniq_v: range from 0 to the number of nodes acting as g.nodes();
+        # edges: uniq_v[edges] = np.unique((src, dst)), mapping from (o, len(nodes)) to the original node idx
+        uniq_v, edges = np.unique((src, dst), return_inverse=True)
+
+        src, dst = np.reshape(edges, (2, -1))
+        g = dgl.DGLGraph()
+        g.add_nodes(len(uniq_v))
+        g.add_edges(src, dst)
+        norm = comp_deg_norm(g)
+        g.ndata.update({'id': torch.from_numpy(uniq_v).long().view(-1, 1), 'norm': torch.from_numpy(norm).view(-1, 1)})
+        g.edata['type_s'] = torch.LongTensor(rel)
+        g.ids = {}
+        in_graph_idx = 0
+        for id in uniq_v:
+            g.ids[in_graph_idx] = id
+            in_graph_idx += 1
     return g
 
 
@@ -96,7 +121,7 @@ def build_extrapolation_time_stamp_graph(args):
     if not os.path.isfile(train_graph_dict_path) or not os.path.isfile(dev_graph_dict_path) or not os.path.isfile(test_graph_dict_path):
         train_data, train_times = load_quadruples(args.dataset, 'train.txt')
         test_data, test_times = load_quadruples(args.dataset, 'test.txt')
-        if args.dataset == 'ICEWS14':
+        if args.dataset == 'extrapolation/icews14':
             dev_data, dev_times = load_quadruples(args.dataset, 'test.txt')
         else:
             dev_data, dev_times = load_quadruples(args.dataset, 'valid.txt')
@@ -278,8 +303,7 @@ def build_interpolation_graphs(args):
             with open(path, 'rb') as f:
                 graph_dicts.append(pickle.load(f))
         graph_dict_train, graph_dict_dev, graph_dict_test = graph_dicts
-        # with open(time_sequence, 'rb') as f:
-        #     interaction_time_sequence = pickle.load(f)
+
     return graph_dict_train, graph_dict_dev, graph_dict_test
 
 

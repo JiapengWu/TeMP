@@ -11,17 +11,23 @@ class EvaluationFilter:
         self.graph_dict_train = graph_dict_train
         self.graph_dict_val = graph_dict_val
         self.graph_dict_test = graph_dict_test
+        self.graph_dict_total = {**self.graph_dict_train, **self.graph_dict_val, **self.graph_dict_test}
         self.get_true_head_and_tail_all()
 
     def get_true_head_and_tail_all(self):
         self.true_heads = dict()
         self.true_tails = dict()
-        times = list(self.graph_dict_train.keys())
+        times = list(self.graph_dict_total.keys())
         for t in times:
-            triples = []
-            for g in self.graph_dict_train[t], self.graph_dict_val[t], self.graph_dict_test[t]:
-                triples.append(torch.stack([g.edges()[0], g.edata['type_s'], g.edges()[1]]).transpose(0, 1))
-            triples = torch.cat(triples, dim=0)
+            if self.args.dataset_dir == 'extrapolation':
+                g = self.graph_dict_total[t]
+                triples = torch.stack([g.edges()[0], g.edata['type_s'], g.edges()[1]]).transpose(0, 1)
+            else:
+                triples = []
+                for g in self.graph_dict_train[t], self.graph_dict_val[t], self.graph_dict_test[t]:
+                    triples.append(torch.stack([g.edges()[0], g.edata['type_s'], g.edges()[1]]).transpose(0, 1))
+                triples = torch.cat(triples, dim=0)
+            # pdb.set_trace()
             true_head, true_tail = CorruptTriples.get_true_head_and_tail_per_graph(triples)
             self.true_heads[t] = true_head
             self.true_tails[t] = true_tail
@@ -33,6 +39,7 @@ class EvaluationFilter:
             o = samples[:, 2]
             test_size = samples.shape[0]
             num_ent = all_ent_embeds.shape[0]
+            # pdb.set_trace()
             o_mask = self.mask_eval_set(samples, test_size, num_ent, time, graph, mode="tail")
             s_mask = self.mask_eval_set(samples, test_size, num_ent, time, graph, mode="head")
             # perturb object
@@ -75,7 +82,7 @@ class EvaluationFilter:
         return torch.cat(ranks)
 
     def mask_eval_set(self, test_triplets, test_size, num_ent, time, graph, mode='tail'):
-        time = time.item()
+        time = int(time.item())
         mask = test_triplets.new_zeros(test_size, num_ent)
         for i in range(test_size):
             h, r, t = test_triplets[i]

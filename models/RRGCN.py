@@ -8,12 +8,11 @@ from models.RGCN import RGCNLayer, RGCNBlockLayer
 class RRGCNLayer(RGCNLayer):
     def __init__(self, args, in_feat, out_feat, bias=None, activation=None,
                  self_loop=True, dropout=0.0):
-        super(RRGCNLayer, self).__init__(in_feat, out_feat, bias=None, activation=None,
-                 self_loop=True, dropout=0.0)
+        super(RRGCNLayer, self).__init__(in_feat, out_feat, bias, activation,
+                 self_loop, dropout)
         self.num_layers = args.num_layers
-        # self.rnn = LSTMCell(input_size=in_feat, hidden_size=out_feat)
         self.inv_temperature = args.inv_temperature
-        self.rnn = nn.GRU(input_size=in_feat, hidden_size=out_feat, num_layers=self.num_layers, dropout=args.dropout)
+        self.rnn = nn.GRU(input_size=in_feat, hidden_size=out_feat, num_layers=self.num_layers)
 
     # define how propagation is done in subclass
     def propagate(self, g):
@@ -35,30 +34,34 @@ class RRGCNLayer(RGCNLayer):
             node_repr = node_repr + self.bias
         if self.self_loop:
             node_repr = node_repr + loop_message
-        # import pdb; pdb.set_trace()
+
+        if self.activation:
+            node_repr = self.activation(node_repr)
+
         adjusted_prev_graph_embeds = prev_graph_embeds * torch.exp(-time_diff_tensor * self.inv_temperature)
         _, hidden = self.rnn(node_repr.unsqueeze(0), adjusted_prev_graph_embeds.expand(self.num_layers, *prev_graph_embeds.shape))
 
-        if self.activation:
-            hidden = self.activation(hidden)
         g.ndata['h'] = hidden[-1]
         return g
 
     def forward_isolated(self, ent_embeds, prev_graph_embeds, time_diff_tensor=None):
-        # import pdb; pdb.set_trace()
         # ent_embeds = ent_embeds + torch.mm(prev_graph_embeds, self.time_weight) * torch.exp(-time_diff_tensor / self.temperature)
         if self.self_loop:
             loop_message = torch.mm(ent_embeds, self.loop_weight)
             if self.dropout is not None:
                 loop_message = self.dropout(loop_message)
             ent_embeds = ent_embeds + loop_message
+
         if self.bias:
             ent_embeds += self.bias
+
         if self.activation:
             ent_embeds = self.activation(ent_embeds)
+
         adjusted_prev_graph_embeds = prev_graph_embeds * torch.exp(-time_diff_tensor * self.inv_temperature)
         _, hidden = self.rnn(ent_embeds.unsqueeze(0), adjusted_prev_graph_embeds.expand(self.num_layers, *prev_graph_embeds.shape))
-        return ent_embeds
+
+        return hidden[-1]
 
 
 class RRGCNBlockLayer(RRGCNLayer):
@@ -100,6 +103,7 @@ class RRGCN(nn.Module):
     def __init__(self, args, hidden_size, embed_size, num_rels, static=False):
         super(RRGCN, self).__init__()
         # in_feat = embed_size if static else hidden_size + embed_size
+        # print(args.rec_only_last_layer)
         self.rec_only_last_layer = args.rec_only_last_layer
 
         if not self.rec_only_last_layer:

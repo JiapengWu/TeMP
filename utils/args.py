@@ -38,7 +38,7 @@ def get_args():
     parser.add_argument('--self-loop', action='store_true')
     parser.add_argument('--rec-only-last-layer', action='store_true')
 
-    parser.add_argument("--inv-temperature", type=float, default=0.5)
+    parser.add_argument("--inv-temperature", type=float, default=1/100)
 
 
     parser.add_argument('--config', '-c', type=str, default=None, help='JSON file with argument for the run.')

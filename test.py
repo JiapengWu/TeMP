@@ -1,13 +1,13 @@
 from utils.dataset import *
 from utils.args import process_args
-from models.TKG_VRE import TKG_VAE
+from previous.TKG_VRE import TKG_VAE
 from baselines.Static import Static
 from baselines.Simple import SimplE
 from baselines.Hyte import Hyte
 from baselines.DiachronicEmbedding import DiachronicEmbedding
 from baselines.StaticRGCN import StaticRGCN
-from baselines.RecurrentRGCN import RecurrentRGCN
-from baselines.DRGCN import DRGCN
+from models.LinearDynamicRGCN import LinearDynamicRGCN
+from models.DynamicRGCN import DynamicRGCN
 import glob
 import json
 from pytorch_lightning import Trainer
@@ -18,11 +18,12 @@ if __name__ == '__main__':
 
     experiment_path = args.checkpoint_path
     checkpoint_path = glob.glob(os.path.join(experiment_path, "checkpoints", "*.ckpt"))[0]
+
     config_path = os.path.join(experiment_path, "config.json")
     args_json = json.load(open(config_path))
     args.__dict__.update(dict(args_json))
 
-    print(checkpoint_path)
+    # print(checkpoint_path)
     # print(config_path)
     args.use_VAE = False
     use_cuda = args.use_cuda = args.n_gpu >= 0 and torch.cuda.is_available()
@@ -37,8 +38,8 @@ if __name__ == '__main__':
               "DE": DiachronicEmbedding,
               "Hyte": Hyte,
               "SRGCN": StaticRGCN,
-              "RRGCN": RecurrentRGCN,
-              "DRGCN": DRGCN
+              "RRGCN": DynamicRGCN,
+              "DRGCN": DynamicRGCN
               }[args.module]
 
     checkpoint = torch.load(checkpoint_path, map_location=lambda storage, loc: storage)

@@ -12,6 +12,7 @@ import torch.nn.functional as F
 from utils.utils import filter_none
 from utils.evaluation import EvaluationFilter
 from utils.utils import cuda
+from utils.dataset import load_quadruples
 
 
 class TKG_Module(LightningModule):
@@ -31,6 +32,7 @@ class TKG_Module(LightningModule):
         self.negative_rate = args.negative_rate
         self.calc_score = {'distmult': distmult, 'complex': complex, 'transE': transE}[args.score_function]
         self.build_model()
+        self.set_extra_vars()
         self.corrupter = CorruptTriples(self.args, graph_dict_train)
         self.evaluater = EvaluationFilter(args, self.calc_score, graph_dict_train, graph_dict_val, graph_dict_test)
 
@@ -120,6 +122,20 @@ class TKG_Module(LightningModule):
         print(test_result)
         print()
         return test_result
+
+    def set_extra_vars(self):
+        if not self.args.dataset_dir == 'extrapolation':
+            return
+        self.graph_dict_total = {**self.graph_dict_train, **self.graph_dict_val, **self.graph_dict_test}
+        _, self.train_times = load_quadruples(self.args.dataset, 'train.txt')
+        _, self.test_times = load_quadruples(self.args.dataset, 'test.txt')
+        if self.args.dataset == 'extrapolation/icews14':
+            _, self.valid_times = load_quadruples(self.args.dataset, 'test.txt')
+            _, self.total_times = load_quadruples(self.args.dataset, 'train.txt', 'test.txt')
+        else:
+            _, self.valid_times = load_quadruples(self.args.dataset, 'valid.txt')
+            _, self.total_times = load_quadruples(self.args.dataset, 'train.txt', 'valid.txt','test.txt')
+        self.time_unit = self.total_times[1] - self.total_times[0]
 
     def get_metrics(self, ranks):
         mrr = torch.mean(1.0 / ranks.float())
