@@ -1,6 +1,5 @@
 import torch
 from utils.CorrptTriples import CorruptTriples
-import pdb
 from utils.utils import cuda
 import numpy as np
 
@@ -47,7 +46,6 @@ class EvaluationFilter:
             # perturb subject
             ranks_s = self.perturb_and_get_rank(ent_mean, rel_enc_means, all_ent_embeds, s, r, o, test_size, s_mask, graph, eval_bz, mode='head')
             ranks = torch.cat([ranks_s, ranks_o])
-            # pdb.set_trace()
             ranks += 1 # change to 1-indexed
             # print("Graph {} mean ranks {}".format(time.item(), ranks.float().mean().item()))
         return ranks

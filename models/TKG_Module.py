@@ -13,16 +13,19 @@ from utils.utils import filter_none
 from utils.evaluation import EvaluationFilter
 from utils.utils import cuda
 from utils.dataset import load_quadruples
+import pdb
+import gc
 
 
 class TKG_Module(LightningModule):
-    def __init__(self, args, num_ents, num_rels, graph_dict_train, graph_dict_val, graph_dict_test):
+    def __init__(self, args, num_ents, num_rels, graph_dict_train, graph_dict_val, graph_dict_test, evaluater_type=EvaluationFilter):
         super(TKG_Module, self).__init__()
         self.args = self.hparams = args
         self.graph_dict_train = graph_dict_train
         self.graph_dict_val = graph_dict_val
         self.graph_dict_test = graph_dict_test
-        self.total_time = list(graph_dict_train.keys())
+        self.total_time = np.array(list(graph_dict_train.keys()))
+        # self.total_time = list(graph_dict_train.keys())
         self.num_rels = num_rels
         self.num_ents = num_ents
         self.embed_size = args.embed_size
@@ -33,12 +36,13 @@ class TKG_Module(LightningModule):
         self.calc_score = {'distmult': distmult, 'complex': complex, 'transE': transE}[args.score_function]
         self.build_model()
         self.set_extra_vars()
-        self.corrupter = CorruptTriples(self.args, graph_dict_train)
-        self.evaluater = EvaluationFilter(args, self.calc_score, graph_dict_train, graph_dict_val, graph_dict_test)
+        if not args.debug:
+            self.corrupter = CorruptTriples(self.args, graph_dict_train)
+            self.evaluater = evaluater_type(args, self.calc_score, graph_dict_train, graph_dict_val, graph_dict_test)
 
     def training_step(self, batch_time, batch_idx):
+        # gc.collect()
         loss = self.forward(batch_time)
-
         if self.trainer.use_dp or self.trainer.use_ddp2:
             loss = loss.unsqueeze(0)
         tqdm_dict = {'train_loss': loss}
@@ -53,6 +57,7 @@ class TKG_Module(LightningModule):
         return output
 
     def validation_step(self, batch_time, batch_idx):
+        # gc.collect()
         """
         Lightning calls this inside the validation loop
         :param batch:
@@ -70,7 +75,7 @@ class TKG_Module(LightningModule):
         })
         output = OrderedDict({
             'ranks': ranks,
-            'val_loss': loss,
+            'val_loss': loss
         })
         self.logger.experiment.log(log_output)
         return output
@@ -88,7 +93,7 @@ class TKG_Module(LightningModule):
                 }
 
     def test_step(self, batch_time, batch_idx):
-        ranks, loss = self.evaluate(batch_time, val=False)
+        ranks, loss = self.evaluate(batch_time, val=True)
 
         # in DP mode (default) make sure if result is scalar, there's another dim in the beginning
         if self.trainer.use_dp or self.trainer.use_ddp2:
@@ -102,6 +107,7 @@ class TKG_Module(LightningModule):
         output = OrderedDict({
             'ranks': ranks,
             'test_loss': loss,
+            'batch_time': batch_time
         })
         self.logger.experiment.log(log_output)
 
@@ -111,16 +117,17 @@ class TKG_Module(LightningModule):
         avg_test_loss = np.mean([x['test_loss'] for x in outputs])
         all_ranks = torch.cat([x['ranks'] for x in outputs])
         mrr, hit_1, hit_3, hit_10 = self.get_metrics(all_ranks)
-
-        test_result = {'mrr': mrr,
-                        'avg_test_loss': avg_test_loss,
-                        'hit_10': hit_10,
-                        'hit_3': hit_3,
-                        'hit_1': hit_1
+        test_result = {'mrr': mrr.item(),
+                        'avg_test_loss': avg_test_loss.item(),
+                        'hit_10': hit_10.item(),
+                        'hit_3': hit_3.item(),
+                        'hit_1': hit_1.item()
                         }
 
         print(test_result)
-        print()
+
+        test_result['batch_times'] = [x['batch_time'] for x in outputs]
+        test_result['all_ranks'] = [x['ranks'] for x in outputs]
         return test_result
 
     def set_extra_vars(self):
@@ -173,20 +180,27 @@ class TKG_Module(LightningModule):
 
     @pl.data_loader
     def train_dataloader(self):
-        return self._dataloader(self.total_time)
+        if self.args.dataset_dir == 'extrapolation':
+            return self._dataloader(self.train_times)
+        else:
+            return self._dataloader(self.total_time)
 
     @pl.data_loader
     def val_dataloader(self):
-        return self._dataloader(self.total_time)
+        if self.args.dataset_dir == 'extrapolation':
+            return self._dataloader(self.valid_times)
+        else:
+            return self._dataloader(self.total_time)
 
     @pl.data_loader
     def test_dataloader(self):
-        return self._dataloader(self.total_time)
+        if self.args.dataset_dir == 'extrapolation':
+            return self._dataloader(self.test_times)
+        else:
+            return self._dataloader(self.total_time)
 
-    # TODO: fix training so that all nodes including isolated ones are considered in the evaluation
     def train_link_prediction(self, ent_embed, triplets, neg_samples, labels, all_embeds_g, corrupt_tail=True):
         r = self.rel_embeds[triplets[:, 1]]
-
         if corrupt_tail:
             s = ent_embed[triplets[:, 0]]
             neg_o = all_embeds_g[neg_samples]
@@ -217,18 +231,20 @@ class TKG_Module(LightningModule):
 
     def get_batch_graph_list(self, t_list, seq_len, graph_dict):
         times = list(graph_dict.keys())
-        time_unit = times[1] - times[0]  # compute time unit
+        # time_unit = times[1] - times[0]  # compute time unit
         time_list = []
 
         t_list = t_list.sort(descending=True)[0]
         g_list = []
+        # s_lst = [t/15 for t in times]
+        # print(s_lst)
         for tim in t_list:
-            length = int(tim / time_unit) + 1
+            # length = int(tim / time_unit) + 1
             # cur_seq_len = seq_len if seq_len <= length else length
+            length = times.index(tim) + 1
             time_seq = times[length - seq_len:length] if seq_len <= length else times[:length]
             time_list.append(([None] * (seq_len - len(time_seq))) + time_seq)
             g_list.append(([None] * (seq_len - len(time_seq))) + [graph_dict[t] for t in time_seq])
-
         t_batched_list = [list(x) for x in zip(*time_list)]
         g_batched_list = [list(x) for x in zip(*g_list)]
         return g_batched_list, t_batched_list

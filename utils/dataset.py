@@ -250,6 +250,7 @@ def load_quadruples_interpolation(dataset_path, train_fname, valid_fname, test_f
 
     return time2triples
 
+
 def get_per_entity_time_sequence(time2triples):
     interaction_time_sequence = defaultdict(set)
     for tim, triple_dict in time2triples.items():
@@ -269,7 +270,6 @@ def build_interpolation_graphs(args):
     dev_graph_dict_path = os.path.join(args.dataset, 'dev_graphs.txt')
     test_graph_dict_path = os.path.join(args.dataset, 'test_graphs.txt')
     # time_sequence = os.path.join(args.dataset, 'interaction_time_sequence.txt')
-
     if not os.path.isfile(train_graph_dict_path) or not os.path.isfile(dev_graph_dict_path) or not os.path.isfile(test_graph_dict_path):
 
         total_data, total_times = load_quadruples(args.dataset, 'train.txt', 'valid.txt', 'test.txt')
@@ -283,12 +283,10 @@ def build_interpolation_graphs(args):
         graph_dict_test = {}
         for tim in total_times:
             print(str(tim) + '\t' + str(max(total_times)))
-
             g_train, g_val, g_test = get_train_val_test_graph_at_t(time2triples[tim], num_r)
             graph_dict_train[tim] = g_train
             graph_dict_dev[tim] = g_val
             graph_dict_test[tim] = g_test
-
 
         for graph_dict, path in zip(
             [graph_dict_train, graph_dict_dev, graph_dict_test],

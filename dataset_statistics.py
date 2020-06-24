@@ -5,12 +5,11 @@ import networkx as nx
 import matplotlib.pyplot as plt
 # from models.TKG_VRE import VKG_VAE
 
-
 def stringtify_graph_nodes_edges(graph, id2ent, id2rel):
     node_lables = [id2ent[n] for n in graph.nodes]
     edge_labels = {}
     for x in graph.edges:
-        rel_id = min(graph.edges[x]['type_s'].item(), graph.edges[x]['type_o'].item())
+        rel_id = graph.edges[x]['type_s'].item()
         # pdb.set_trace()
         edge_labels[x] = id2rel[rel_id]
 
@@ -46,21 +45,19 @@ def calc_num_facts_per_rel(graph):
 
 def calc_hist(graphs, id2ent, id2rel, stringtify=False):
     # construct a dict edges -> relation type
-    edges_hist = {}
+    edges_hist = defaultdict(list)
     for t, graph in enumerate(graphs):
         for u,v in graph.edges:
-
             rel_id = graph.edges[u,v]['type_s'].item()
+            u_id = graph.nodes[u]['id'].item()
+            v_id = graph.nodes[v]['id'].item()
             if rel_id >= num_rels:
                 continue
             if stringtify:
-                u = id2ent[u]
-                v = id2ent[v]
+                u_string = id2ent[u_id]
+                v_string = id2ent[v_id]
                 rel_id = id2rel[rel_id]
-            try:
-                edges_hist[(u, v)].append((t, rel_id))
-            except:
-                edges_hist[(u, v)] = [(t, rel_id)]
+            edges_hist[(u_id, v_id)].append((t, rel_id))
     return edges_hist
 
 
@@ -120,81 +117,173 @@ def plot_rel_over_time(edges_hist):
     plt.savefig(os.path.join(fig_path, "num_hist_rel_types_per_ent_pair.png"))
     plt.clf()
 
-def plot_node_change_over_time(graphs):
-    node_seq = [set(list(graph.nodes)) for graph in graphs]
+def plot_node_edge_change_over_time():
+
     last_nodes = None
-    births = []
-    deaths = []
-    commons = []
-    for nodes in node_seq:
-        if last_nodes:
-            deaths.append(len(last_nodes - nodes))
-            births.append(len(nodes - last_nodes))
-            commons.append(len(nodes.intersection(last_nodes)))
-        last_nodes = nodes
-    plt.plot(births)
-    plt.xlabel("time")
-    plt.ylabel("# entity births")
-    plt.savefig(os.path.join(fig_path, "num_entity_births.png"))
-    plt.clf()
-    plt.plot(deaths)
-    plt.xlabel("time")
-    plt.ylabel("# entity deaths")
-    plt.savefig(os.path.join(fig_path, "num_entity_deaths.png"))
-    plt.clf()
-    plt.plot(commons)
-    plt.xlabel("time")
-    plt.ylabel("# entity commons")
-    plt.savefig(os.path.join(fig_path, "num_entity_commons.png"))
-    plt.clf()
-
-
-def plot_edge_over_time(graphs):
-    edge_seq = [set(list(graph.edges)) for graph in graphs]
     last_edges = None
-    births = []
-    deaths = []
-    commons = []
-    for edges in edge_seq:
+
+    entity_births = []
+    entity_deaths = []
+    entity_commons = []
+
+    edge_births = []
+    edge_deaths = []
+    edge_commons = []
+
+    new_subject_to_edge_count = defaultdict(int)
+    new_object_to_edge_count = defaultdict(int)
+    total_set = set()
+    num_new_nodes = []
+    k_ks = []
+    u_ks = []
+    u_us = []
+    for i in times:
+        train_graph = nx_train_graphs[i]
+        val_graph = nx_val_graphs[i]
+        test_graph = nx_test_graphs[i]
+        node_idx = set([train_graph.nodes[n]['id'].item() for n in train_graph.nodes])
+        new_nodes = node_idx.difference(total_set)
+        total_set = total_set | new_nodes
+        num_new_nodes.append(len(new_nodes))
+        cur_edges = []
+        nodes_from_edges = set()
+        for u, v in train_graph.edges:
+            rel_id = train_graph.edges[u, v]['type_s'].item()
+            u_id = train_graph.nodes[u]['id'].item()
+            v_id = train_graph.nodes[v]['id'].item()
+            nodes_from_edges.add(u_id)
+            nodes_from_edges.add(v_id)
+            cur_edges.append((u_id, rel_id, v_id))
+            if u_id in new_nodes:
+                new_subject_to_edge_count[u_id] += 1
+            if v_id in new_nodes:
+                new_object_to_edge_count[v_id] += 1
+
+        k_k = u_k = u_u = 0
+        for u, v in val_graph.edges:
+            # rel_id = val_graph.edges[u, v]['type_s'].item()
+            u_id = val_graph.nodes[u]['id'].item()
+            v_id = val_graph.nodes[v]['id'].item()
+            u_unknown = u_id in new_nodes
+            v_unknown = v_id in new_nodes
+            if u_unknown and v_unknown:
+                u_u += 1
+            elif u_unknown or v_unknown:
+                u_k += 1
+            else:
+                k_k += 1
+        u_us.append(u_u)
+        u_ks.append(u_k)
+        k_ks.append(k_k)
+
+        cur_edges = set(cur_edges)
+        nodes_without_train_edges = new_nodes.difference(nodes_from_edges)
+        # print(len(nodes_without_train_edges))
+        # if len(nodes_without_train_edges) > 0:
+        #     pdb.set_trace()
+        for n in nodes_without_train_edges:
+            new_subject_to_edge_count[n] = new_object_to_edge_count[n] = 0
+
         if last_edges:
-            deaths.append(len(last_edges - edges))
-            births.append(len(edges - last_edges))
-            commons.append(len(edges.intersection(last_edges)))
-        last_edges = edges
-    plt.plot(births)
-    plt.xlabel("time")
-    plt.ylabel("# edge births")
-    plt.savefig(os.path.join(fig_path, "num_edge_births.png"))
+            common = cur_edges.intersection(last_edges)
+            edge_deaths.append(len(last_edges) - len(common))
+            edge_births.append(len(cur_edges) - len(common))
+            edge_commons.append(len(common))
+        else:
+            edge_commons.append(0)
+            edge_births.append(len(cur_edges))
+
+        if last_nodes:
+            common = node_idx.intersection(last_nodes)
+            entity_deaths.append(len(last_nodes) - len(common))
+            entity_births.append(len(node_idx) - len(common))
+            entity_commons.append(len(common))
+        else:
+            entity_commons.append(0)
+            entity_births.append(len(node_idx))
+        last_edges = cur_edges
+        last_nodes = node_idx
+
+
+    # subject_freq_to_count = defaultdict(int)
+    # object_freq_to_count = defaultdict(int)
+
+    # for eid, freq in new_subject_to_edge_count.items():
+    #     subject_freq_to_count[freq] += 1
+    # for eid, freq in new_object_to_edge_count.items():
+    #     object_freq_to_count[freq] += 1
+    # subject_freq_to_count = {k: v for k, v in sorted(subject_freq_to_count.items(), key=lambda item: item[0])}
+    # object_freq_to_count = {k: v for k, v in sorted(object_freq_to_count.items(), key=lambda item: item[0])}
+
+    plt.plot(entity_commons, label='# entities in common with t - 1')
+    plt.plot(entity_births, label='# entities added to t - 1')
+    plt.plot(entity_deaths, label='# entities deleted at t + 1')
+    plt.plot(num_new_nodes, label='# new entities')
+    plt.legend()
+    plt.xlabel("time t")
+    plt.ylabel("# entities")
+    plt.savefig(os.path.join(fig_path, "entity_statistics.png"))
     plt.clf()
-    plt.plot(deaths)
-    plt.xlabel("time")
-    plt.ylabel("# edge deaths")
-    plt.savefig(os.path.join(fig_path, "num_edge_deaths.png"))
+
+    plt.plot(edge_commons, label='# edges in common with t - 1')
+    plt.plot(edge_births, label='# edges added to t - 1')
+    plt.plot(edge_deaths, label='# edges deleted at t + 1')
+    plt.legend()
+    plt.xlabel("time t")
+    plt.ylabel("# edges")
+    plt.savefig(os.path.join(fig_path, "edge_statistics.png"))
     plt.clf()
-    plt.plot(commons)
-    plt.xlabel("time")
-    plt.ylabel("# edge commons")
-    plt.savefig(os.path.join(fig_path, "num_edge_commons.png"))
+
+    plt.plot(k_ks, label='# both entities are known')
+    plt.plot(u_ks, label='# one entity is known')
+    plt.plot(u_us, label='# both entities are unknown')
+    sum_kk = np.sum(k_ks)
+    sum_uk = np.sum(u_ks)
+    sum_uu = np.sum(u_us)
+    sum_all = sum_kk + sum_uk + sum_uu
+    print(sum_kk / sum_all)
+    print(sum_uk / sum_all)
+    print(sum_uu / sum_all)
+
+    plt.legend()
+    plt.xlabel("time t")
+    plt.ylabel("# validation edges")
+    plt.savefig(os.path.join(fig_path, "val_edge_statistics.png"))
+    plt.clf()
+    # plt.scatter(list(subject_freq_to_count.keys()), list(subject_freq_to_count.values()), label='new entity is subject')
+    # plt.scatter(list(object_freq_to_count.keys()), list(object_freq_to_count.values()), label='new entity is object')
+
+    # pdb.set_trace()
+
+    subject_freq = list(new_subject_to_edge_count.values())
+    object_freq = list(new_object_to_edge_count.values())
+    plt.hist(subject_freq, bins=max(subject_freq), label='new entity is subject')
+    plt.hist(object_freq, bins=max(object_freq), label='new entity is object')
+    # print(subject_freq_to_count)
+    # print(object_freq_to_count)
+    plt.legend()
+    plt.xlabel("number of new edges with new entity")
+    plt.ylabel("number of entities")
+    plt.savefig(os.path.join(fig_path, "new_entity_statistics.png"))
     plt.clf()
 
 
 def plot_tail_change_over_time(graphs, stringtify=False):
 
     # construct a dict edges -> relation type
-    head_rel_hist = {}
+    head_rel_hist = defaultdict(list)
     for t, graph in enumerate(graphs):
-        for u,v in graph.edges:
+        for u, v in graph.edges:
             rel_id = graph.edges[u,v]['type_s'].item()
+            u_id = graph.nodes[u]['id'].item()
+            v_id = graph.nodes[v]['id'].item()
             if rel_id >= num_rels:
                 continue
             if stringtify:
-                u = id2ent[u]
-                v = id2ent[v]
-                rel_id = id2rel[rel_id]
-            try:
-                head_rel_hist[(u, rel_id)].append((t, v))
-            except:
-                head_rel_hist[(u, rel_id)] = [(t, v)]
+                u_string = id2ent[u_id]
+                v_string = id2ent[v_id]
+                rel_string = id2rel[rel_id]
+            head_rel_hist[(u_id, rel_id)].append((t, v_id))
 
     mutate_intervals = []
     concurrents = []
@@ -279,39 +368,62 @@ def plot_num_facts_nodes_over_time(graphs):
     plt.savefig(os.path.join(fig_path, "num_edges_over_time.png"))
     plt.clf()
 
+def draw_graphs():
+
+    # print(nx_graphs)
+    graph = nx_train_graphs[0].subgraph(list(nx_train_graphs[0].nodes)[:100])
+    node_lables, edge_labels = stringtify_graph_nodes_edges(graph, id2ent, id2rel)
+    print("Nodes: {}".format(node_lables))
+    pos = nx.spring_layout(graph)
+    nx.draw_networkx_nodes(graph, pos, node_size=10)
+
+    # nx.draw_networkx_labels(graph, pos, dict(zip(pos, node_lables)))
+    nx.draw_networkx_edges(graph, pos, alpha=0.5)
+
+    nx.draw_networkx_edge_labels(graph, pos, edge_labels=edge_labels)
+    plt.show()
+
+# def get_all_nodes():
+#     total_set = set()
+#     for i in times:
+#         train_graph = nx_train_graphs[i]
+#         val_graph = nx_val_graphs[i]
+#         test_graph = nx_test_graphs[i]
+#
+#         train_node_idx = set([train_graph.nodes[n]['id'].item() for n in train_graph.nodes])
+#         val_node_idx = set([train_graph.nodes[n]['id'].item() for n in val_graph.nodes])
+#         test_node_idx = set([train_graph.nodes[n]['id'].item() for n in test_graph.nodes])
+#         node_idx = train_node_idx | val_node_idx | test_node_idx
+#
+#         total_set = total_set | node_idx
+#     pdb.set_trace()
+
 
 if __name__ == '__main__':
     args = process_args()
+    train_data, train_times = load_quadruples(args.dataset, 'train.txt')
+    max_time_step = len(train_times)
     num_ents, num_rels = get_total_number(args.dataset, 'stat.txt')
-    if args.dataset == 'extrapolation/ICEWS14':
-        train_data, train_times = load_quadruples(args.dataset, 'train.txt')
-        valid_data, valid_times = load_quadruples(args.dataset, 'test.txt')
-        test_data, test_times = load_quadruples(args.dataset, 'test.txt')
-        total_data, total_times = load_quadruples(args.dataset, 'train.txt', 'test.txt')
-    else:
-        train_data, train_times = load_quadruples(args.dataset, 'train.txt')
-        valid_data, valid_times = load_quadruples(args.dataset, 'valid.txt')
-        test_data, test_times = load_quadruples(args.dataset, 'test.txt')
-        total_data, total_times = load_quadruples(args.dataset, 'train.txt', 'valid.txt','test.txt')
-    # id2ent, id2rel = id2entrel(args.dataset, num_rels)
-    id2ent = id2rel = None
-    train_graph_dict = build_extrapolation_time_stamp_graph(args)
+    id2ent, id2rel = id2entrel(args.dataset, num_rels)
+    # id2ent = id2rel = None
+    train_graph_dict, val_graph_dict, test_graph_dict = build_interpolation_graphs(args)
     times = list(train_graph_dict.keys())
-    nx_graphs = [train_graph_dict[i].to_networkx(edge_attrs=['type_s', 'type_o']) for i in times]
-    fig_path = os.path.join('figs', args.dataset.split('/')[-1])
-    if not os.path.exists(fig_path):
-        os.mkdir(fig_path)
-    # print(nx_graphs)
-    # graph = nx_graphs[0].subgraph(list(nx_graphs[0].nodes)[:100])
-    # node_lables, edge_labels = stringtify_graph_nodes_edges(graph, id2ent, id2rel)
-    # print("Nodes: {}".format(node_lables))
-    plot_num_facts_nodes_over_time(nx_graphs)
-    plot_tail_change_over_time(nx_graphs, False)
-    plot_edge_over_time(nx_graphs)
-    plot_node_change_over_time(nx_graphs)
+    nx_train_graphs = [train_graph_dict[i].to_networkx(edge_attrs=['type_s'], node_attrs=['id']) for i in times]
+    nx_val_graphs = [val_graph_dict[i].to_networkx(edge_attrs=['type_s'], node_attrs=['id']) for i in times]
+    nx_test_graphs = [test_graph_dict[i].to_networkx(edge_attrs=['type_s'], node_attrs=['id']) for i in times]
+    # draw_graphs()
 
-    edges_hist = calc_hist(nx_graphs, id2ent, id2rel, False)
-    plot_rel_over_time(edges_hist)
+    # exit()
+    fig_path = os.path.join('figs', args.dataset_dir + "_" + args.dataset.split('/')[-1])
+    # import pdb; pdb.set_trace()
+    if not os.path.exists(fig_path):
+        os.makedirs(fig_path)
+    # plot_num_facts_nodes_over_time(nx_graphs)
+    # plot_tail_change_over_time(nx_graphs, False)
+    plot_node_edge_change_over_time()
+
+    # edges_hist = calc_hist(nx_graphs, id2ent, id2rel, False)
+    # plot_rel_over_time(edges_hist)
     # pdb.set_trace()
     #
     # for graph in nx_graphs:
@@ -319,8 +431,3 @@ if __name__ == '__main__':
     #     calc_num_facts_per_rel(graph)
 
 
-    # pos = nx.spring_layout(graph)
-    # nx.draw_networkx_nodes(graph, pos, node_size=10)
-    # nx.draw_networkx_labels(graph, pos, dict(zip(pos, node_lables)))
-    # nx.draw_networkx_edges(graph, pos, alpha=0.5)
-    # nx.draw_networkx_edge_labels(graph, pos, edge_labels=edge_labels)

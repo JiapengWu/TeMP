@@ -30,3 +30,4 @@ class TKG_Non_Recurrent(TKG_Module):
             loss_head = self.train_link_prediction(ent_embed, triplets, neg_head_samples, labels, all_embeds_g, corrupt_tail=False)
             reconstruct_loss += loss_tail + loss_head
         return reconstruct_loss
+

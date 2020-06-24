@@ -1,14 +1,14 @@
 import argparse
 import os
-import pdb
-import string
 import re
 
 def get_args():
     parser = argparse.ArgumentParser(description='TKG-VAE')
-    parser.add_argument("--dataset-dir", '-d', type=str, default='wiki_data')
+    parser.add_argument("--dataset-dir", '-d', type=str, default='wiki')
     return parser.parse_args()
 
+def remove_redundant(train_data, other_data):
+    return [i for i in other_data if i not in train_data]
 
 def create_ent_rel_to_idx():
     times = []
@@ -31,6 +31,21 @@ def create_ent_rel_to_idx():
                 time = int(re.sub(r'-', '', time))
                 times.append(time)
                 triple_lst.append((head, rel, tail, time))
+
+    # if "gdelt" in args.dataset_dir:
+    #     print("cleaning...")
+    #     train_set = set(train_triples)
+    #     val_set = set(valid_triples)
+    #     test_set = set(test_triples)
+    #     train_triples = list(train_set)
+    #     valid_triples = list(val_set)
+    #     test_triples = list(test_set)
+    #     train_val_intersect = train_set.intersection(val_set)
+    #     train_test_intersect = train_set.intersection(test_set)
+    #     print("val")
+    #     valid_triples = [i for i in valid_triples if i not in train_val_intersect]
+    #     print("test")
+    #     test_triples = [i for i in test_triples if i not in train_test_intersect]
 
     return list(set(times)), list(set(entities)), list(set(relations)), train_triples, valid_triples, test_triples
 
@@ -64,7 +79,6 @@ if __name__ == '__main__':
 
     times, entities, relations, train_triples, valid_triples, test_triples = create_ent_rel_to_idx()
     times.sort()
-    # pdb.set_trace()
 
     num_times = len(times)
     num_ents = len(entities)

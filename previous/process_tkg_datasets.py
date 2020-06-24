@@ -6,6 +6,7 @@ import re
 from process_interpolation_dataset import *
 from collections import Counter, defaultdict
 
+
 def create_ent_rel_to_idx():
     entities = []
     relations = []
@@ -75,6 +76,78 @@ def create_ent_rel_to_idx():
 
     return list(set(times)), list(set(entities)), list(set(relations)), train_triples, valid_triples, test_triples
 
+
+def create_year2id(self, triple_time):
+    year2id = dict()
+    freq = ddict(int)
+    count = 0
+    year_list = []
+
+    for k, v in triple_time.items():
+        try:
+            start = v[0].split('-')[0]
+            end = v[1].split('-')[0]
+        except:
+            pdb.set_trace()
+
+        if start.find('#') == -1 and len(start) == 4:
+            year_list.append(int(start))
+        if end.find('#') == -1 and len(end) == 4:
+            year_list.append(int(end))
+
+    # for k,v in entity_time.items():
+    # 	start = v[0].split('-')[0]
+    # 	end = v[1].split('-')[0]
+
+    # 	if start.find('#') == -1 and len(start) == 4: year_list.append(int(start))
+    # 	if end.find('#') == -1 and len(end) ==4: year_list.append(int(end))
+    # 	# if int(start) > int(end):
+    # 	# 	pdb.set_trace()
+
+    year_list.sort()
+    for year in year_list:
+        freq[year] = freq[year] + 1
+
+    # pdb.set_trace()
+
+    year_class = []
+    count = 0
+    for key in sorted(freq.keys()):
+        count += freq[key]
+        if count > 300:
+            year_class.append(key)
+            count = 0
+    prev_year = 0
+    i = 0
+
+    # pdb.set_trace()
+
+    for i, yr in enumerate(year_class):
+        year2id[(prev_year, yr)] = i
+        prev_year = yr + 1
+    year2id[(prev_year, max(year_list))] = i + 1
+    self.year_list = year_list
+
+    # pdb.set_trace()
+
+    # for k,v in entity_time.items():
+    # 	if v[0] == '####-##-##' or v[1] == '####-##-##':
+    # 		continue
+    # 	if len(v[0].split('-')[0])!=4 or len(v[1].split('-')[0])!=4:
+    # 		continue
+    # 	start = v[0].split('-')[0]
+    # 	end = v[1].split('-')[0]
+    # for start in start_list:
+    # 	if start not in start_year2id:
+    # 		start_year2id[start] = count_start
+    # 		count_start+=1
+
+    # for end in end_list:
+    # 	if end not in end_year2id:
+    # 		end_year2id[end] = count_end
+    # 		count_end+=1
+
+    return year2id
 
 if __name__ == '__main__':
     args = get_args()

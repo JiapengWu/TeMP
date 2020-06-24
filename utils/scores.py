@@ -28,9 +28,7 @@ def complex(head, relation, tail, mode='single'):
     re_head, im_head = torch.chunk(head, 2, dim=-1)
     re_relation, im_relation = torch.chunk(relation, 2, dim=-1)
     re_tail, im_tail = torch.chunk(tail, 2, dim=-1)
-
     if mode == 'tail':
-        # import pdb; pdb.set_trace()
         re_score = re_head * re_relation - im_head * im_relation
         im_score = re_head * im_relation + im_head * re_relation
         score = re_score.unsqueeze(1) * re_tail + im_score.unsqueeze(1) * im_tail

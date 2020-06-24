@@ -97,6 +97,7 @@ class CorruptTriples:
                 true_head[(relation, tail)] = []
             true_head[(relation, tail)].append(head)
 
+        # this is correct
         for relation, tail in true_head:
             true_head[(relation, tail)] = np.array(list(set(true_head[(relation, tail)])))
         for head, relation in true_tail:
