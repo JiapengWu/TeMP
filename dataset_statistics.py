@@ -117,6 +117,7 @@ def plot_rel_over_time(edges_hist):
     plt.savefig(os.path.join(fig_path, "num_hist_rel_types_per_ent_pair.png"))
     plt.clf()
 
+
 def plot_node_edge_change_over_time():
 
     last_nodes = None
@@ -137,6 +138,8 @@ def plot_node_edge_change_over_time():
     k_ks = []
     u_ks = []
     u_us = []
+
+    all_train_edges = set()
     for i in times:
         train_graph = nx_train_graphs[i]
         val_graph = nx_val_graphs[i]
@@ -145,7 +148,8 @@ def plot_node_edge_change_over_time():
         new_nodes = node_idx.difference(total_set)
         total_set = total_set | new_nodes
         num_new_nodes.append(len(new_nodes))
-        cur_edges = []
+        cur_train_edges = []
+        cur_val_edges = []
         nodes_from_edges = set()
         for u, v in train_graph.edges:
             rel_id = train_graph.edges[u, v]['type_s'].item()
@@ -153,7 +157,8 @@ def plot_node_edge_change_over_time():
             v_id = train_graph.nodes[v]['id'].item()
             nodes_from_edges.add(u_id)
             nodes_from_edges.add(v_id)
-            cur_edges.append((u_id, rel_id, v_id))
+            cur_train_edges.append((u_id, rel_id, v_id))
+            all_train_edges.add((u_id, rel_id, v_id))
             if u_id in new_nodes:
                 new_subject_to_edge_count[u_id] += 1
             if v_id in new_nodes:
@@ -161,9 +166,10 @@ def plot_node_edge_change_over_time():
 
         k_k = u_k = u_u = 0
         for u, v in val_graph.edges:
-            # rel_id = val_graph.edges[u, v]['type_s'].item()
+            rel_id = val_graph.edges[u, v]['type_s'].item()
             u_id = val_graph.nodes[u]['id'].item()
             v_id = val_graph.nodes[v]['id'].item()
+            cur_val_edges.append((u_id, rel_id, v_id))
             u_unknown = u_id in new_nodes
             v_unknown = v_id in new_nodes
             if u_unknown and v_unknown:
@@ -176,7 +182,8 @@ def plot_node_edge_change_over_time():
         u_ks.append(u_k)
         k_ks.append(k_k)
 
-        cur_edges = set(cur_edges)
+        cur_train_edges = set(cur_train_edges)
+        cur_val_edges = set(cur_val_edges)
         nodes_without_train_edges = new_nodes.difference(nodes_from_edges)
         # print(len(nodes_without_train_edges))
         # if len(nodes_without_train_edges) > 0:
@@ -185,13 +192,16 @@ def plot_node_edge_change_over_time():
             new_subject_to_edge_count[n] = new_object_to_edge_count[n] = 0
 
         if last_edges:
-            common = cur_edges.intersection(last_edges)
-            edge_deaths.append(len(last_edges) - len(common))
-            edge_births.append(len(cur_edges) - len(common))
+            # common = cur_train_edges.intersection(last_edges)
+            common = cur_val_edges.intersection(all_train_edges)
+            # edge_deaths.append(len(last_edges) - len(common))
+            # edge_births.append(len(cur_train_edges) - len(common))
+            edge_births.append(len(cur_val_edges) - len(common))
             edge_commons.append(len(common))
         else:
             edge_commons.append(0)
-            edge_births.append(len(cur_edges))
+            # edge_births.append(len(cur_train_edges))
+            edge_births.append(len(cur_val_edges))
 
         if last_nodes:
             common = node_idx.intersection(last_nodes)
@@ -201,7 +211,7 @@ def plot_node_edge_change_over_time():
         else:
             entity_commons.append(0)
             entity_births.append(len(node_idx))
-        last_edges = cur_edges
+        last_edges = cur_train_edges
         last_nodes = node_idx
 
 
@@ -215,6 +225,14 @@ def plot_node_edge_change_over_time():
     # subject_freq_to_count = {k: v for k, v in sorted(subject_freq_to_count.items(), key=lambda item: item[0])}
     # object_freq_to_count = {k: v for k, v in sorted(object_freq_to_count.items(), key=lambda item: item[0])}
 
+    print("Entity births: {}".format(entity_births))
+    print("Avg number of entity births after time 1: {}".format(np.mean(entity_births[1:])))
+    print("Avg number of entity deletion before last time: {}".format(np.mean(entity_deaths[:-1])))
+
+    print("edges births: {}".format(edge_births))
+    print("Avg number of edges births after time 1: {}".format(np.mean(edge_births[1:])))
+    print("Avg number of edges deletion before last time: {}".format(np.mean(edge_deaths[:-1])))
+    # exit()
     plt.plot(entity_commons, label='# entities in common with t - 1')
     plt.plot(entity_births, label='# entities added to t - 1')
     plt.plot(entity_deaths, label='# entities deleted at t + 1')
@@ -225,7 +243,10 @@ def plot_node_edge_change_over_time():
     plt.savefig(os.path.join(fig_path, "entity_statistics.png"))
     plt.clf()
 
-    plt.plot(edge_commons, label='# edges in common with t - 1')
+    plt.plot(np.array(edge_commons) + np.array(edge_births), label='# edges at time step t')
+    # plt.plot(edge_commons, label='# edges in common with t - 1')
+
+    plt.plot(edge_commons, label='# edges occurred before t')
     plt.plot(edge_births, label='# edges added to t - 1')
     plt.plot(edge_deaths, label='# edges deleted at t + 1')
     plt.legend()
