@@ -64,6 +64,40 @@ def plot_edge_sparsity():
     plt.legend()
     plt.savefig(os.path.join(fig_path, "num_avg_active_hist_nodes.png"))
 
+def print_example_kg():
+    entities_1 = ["United States"]
+    entities_2 = ["France"]
+
+    for t in times:
+        pre_graph = nx_train_graphs[t]
+        for u, v in pre_graph.edges:
+            rel_id = pre_graph.edges[u, v]['type_s'].item()
+            if rel_id >= num_rels:
+                continue
+            u_id = pre_graph.nodes[u]['id'].item()
+            v_id = pre_graph.nodes[v]['id'].item()
+
+            u_string = id2ent[u_id]
+            v_string = id2ent[v_id]
+            u_match = v_match = False
+            print_string = False
+
+            for e in entities_1:
+                if e in u_string:
+                    u_match = True
+                if e in v_string:
+                    v_match = True
+            if u_match:
+                for e in entities_2:
+                    if e in v_string:
+                        print_string = True
+            if v_match:
+                for e in entities_2:
+                    if e in u_string:
+                        print_string = True
+
+            if print_string:
+                print(u_string, id2rel[rel_id], v_string, t)
 
 def get_hist_edge_num(tim):
     idx2count = dict()
@@ -352,7 +386,8 @@ if __name__ == '__main__':
     # pdb.set_trace()
 
     interval = total_times[1] - total_times[0]
-    plot_sparsity()
-    calc_entity_hist()
-    calc_entity_hist_future()
-    show_hist_facts()
+    print_example_kg()
+    # plot_sparsity()
+    # calc_entity_hist()
+    # calc_entity_hist_future()
+    # show_hist_facts()
