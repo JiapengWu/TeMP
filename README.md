@@ -1,2 +1,1 @@
-# TKG-VAE
-Variational Temporal Knowledge Graph Encoder
+# TeMP: Temporal Message Passing Network for Temporal Knowledge Graph Completion
