@@ -192,16 +192,17 @@ def plot_node_edge_change_over_time():
             new_subject_to_edge_count[n] = new_object_to_edge_count[n] = 0
 
         if last_edges:
-            # common = cur_train_edges.intersection(last_edges)
-            common = cur_val_edges.intersection(all_train_edges)
-            # edge_deaths.append(len(last_edges) - len(common))
-            # edge_births.append(len(cur_train_edges) - len(common))
-            edge_births.append(len(cur_val_edges) - len(common))
+            #train
+            common = cur_train_edges.intersection(last_edges)
+            edge_births.append(len(cur_train_edges) - len(common))
+            edge_deaths.append(len(last_edges) - len(common))
+            # common = cur_val_edges.intersection(all_train_edges)
+            # edge_births.append(len(cur_val_edges) - len(common))
             edge_commons.append(len(common))
         else:
             edge_commons.append(0)
-            # edge_births.append(len(cur_train_edges))
-            edge_births.append(len(cur_val_edges))
+            edge_births.append(len(cur_train_edges))
+            # edge_births.append(len(cur_val_edges))
 
         if last_nodes:
             common = node_idx.intersection(last_nodes)
@@ -233,6 +234,7 @@ def plot_node_edge_change_over_time():
     print("Avg number of edges births after time 1: {}".format(np.mean(edge_births[1:])))
     print("Avg number of edges deletion before last time: {}".format(np.mean(edge_deaths[:-1])))
     # exit()
+    # plt.figure(figsize=(3, 9/4), dpi=400, facecolor='w', edgecolor='k')
     plt.plot(entity_commons, label='# entities in common with t - 1')
     plt.plot(entity_births, label='# entities added to t - 1')
     plt.plot(entity_deaths, label='# entities deleted at t + 1')
@@ -243,15 +245,15 @@ def plot_node_edge_change_over_time():
     plt.savefig(os.path.join(fig_path, "entity_statistics.png"))
     plt.clf()
 
-    plt.plot(np.array(edge_commons) + np.array(edge_births), label='# edges at time step t')
+    plt.plot(np.array(edge_commons) + np.array(edge_births), label='# facts at time step t')
     # plt.plot(edge_commons, label='# edges in common with t - 1')
 
-    plt.plot(edge_commons, label='# edges occurred before t')
-    plt.plot(edge_births, label='# edges added to t - 1')
-    plt.plot(edge_deaths, label='# edges deleted at t + 1')
+    plt.plot(edge_commons, label='# facts in common with t')
+    plt.plot(edge_births, label='# facts added to t - 1')
+    # plt.plot(edge_deaths, label='# facts deleted at t + 1')
     plt.legend()
-    plt.xlabel("time t")
-    plt.ylabel("# edges")
+    plt.xlabel("time step index")
+    plt.ylabel("# facts")
     plt.savefig(os.path.join(fig_path, "edge_statistics.png"))
     plt.clf()
 
