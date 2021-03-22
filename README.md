@@ -1,7 +1,7 @@
 # TeMP: Temporal Message Passing Network for Temporal Knowledge Graph Completion
 PyTorch implementation of [TeMP: Temporal Message Passing Network for Temporal Knowledge Graph Completion](https://arxiv.org/pdf/2010.03526.pdf) ([EMNLP 2020](https://2020.emnlp.org/))
 
-##Installation
+## Installation
 Create a conda virtual environment first, you can name `your_env_name` yourself:
 ```
 conda create --name <your_env_name> python=3.6.10
