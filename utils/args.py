@@ -24,8 +24,6 @@ def get_args():
     parser.add_argument("--num-layers", type=int, default=1)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--gradient-clip-val", type=float, default=1.0)
-    parser.add_argument("--max-epochs", type=int, default=20)
-    parser.add_argument("--nb-gpu-nodes", type=int, default=20)
     parser.add_argument("--patience", type=int, default=10)
     parser.add_argument("--n-bases", type=int, default=128, help="number of weight blocks for each relation")
     parser.add_argument("--rgcn-layers", type=int, default=2, help="number of propagation rounds")
