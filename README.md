@@ -1,7 +1,7 @@
 # TeMP: Temporal Message Passing Network for Temporal Knowledge Graph Completion
 PyTorch implementation of [TeMP: Temporal Message Passing Network for Temporal Knowledge Graph Completion](https://arxiv.org/pdf/2010.03526.pdf) ([EMNLP 2020](https://2020.emnlp.org/))
 
-##Installation
+## Installation
 Create a conda virtual environment first, you can name `your_env_name` yourself:
 ```
 conda create --name <your_env_name> python=3.6.10
@@ -85,7 +85,7 @@ python -u main.py -c configs/grid/icews15/config_bisargcn.json --rec-only-last-l
   
   `--fast_dev_run`: runs full iteration over everything to find bugs
    
-  `--type1`: use type 1 GRU cell defined by the [wikipedia page](https://en.wikipedia.org/wiki/Gated_recurrent_unit) implemented by our self
+  `--type1`: use type 1 GRU cell defined by the [wikipedia page](https://en.wikipedia.org/wiki/Gated_recurrent_unit) implemented by ourselves
   
 ## Testing and analysis
 To test a model on the corresponding test set, run the following:
