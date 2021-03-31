@@ -37,7 +37,7 @@ icews14
 
 The following command trains a model using the bidirectional GRU + RGCN model with frequency based gating. The config file following `-c` provide a set of parameters that overwrites the default parameters. 
 ```
-python -u main.py -c configs/grid/icews15/config_bisargcn.json --rec-only-last-layer --use-time-embedding --post-aggregation
+python -u main.py -c configs/grid/icews15/config_bisargcn.json --rec-only-last-layer --use-time-embedding --post-ensemble
 ```
 
   `--n-gpu`: index of the gpus for usage, e.g. `--n-gpu 0 1 2` for using GPU indexed 0, 1 and 2.
