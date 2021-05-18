@@ -100,3 +100,17 @@ python link_prediction_analysis.py --checkpoint-path ${path-to-your-model-checkp
 ```
 
 To get the prediction of the TED classifier, run `python greedy_classifier.py` with the desired parameters. 
+
+## Trained model checkpoints and computation specs
+You can directly download the trained models [here](https://drive.google.com/file/d/1efPogR01qHorVX4lpqstMqyATENWVP6C/view?usp=sharing) and use them for inference.
+If you would like to perform training on a cluster, please refer to the following bash files for the specified computation resource requirements:
+
+`launcher_baseline.sh`: script for embedding models and SRGCN models
+
+`launcher_14.sh`: script for all models on the ICEWS14 dataset
+ 
+`launcher_15.sh`: script for all models on the ICEWS05-15 dataset (except SARGCN models)
+
+`launcher_15_sargcn.sh`: script for SARGCN models on the ICEWS05-15
+
+`launcher_2gpu.sh`: script for all models on the GDELT dataset
